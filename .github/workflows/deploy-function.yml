@@ -1,4 +1,4 @@
-name: Deploy FunctionApp (Node)
+name: Deploy FunctionApp (Node) — No Kudu
 
 on:
   push:
@@ -22,36 +22,91 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Validate function structure
+      - name: Validate structure
         run: |
           test -f host.json || (echo "Falta host.json" && exit 1)
-          echo "Validando function.json..."
           find . -maxdepth 2 -name function.json | grep function.json >/dev/null || (echo "No hay function.json" && exit 1)
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci
 
-      - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: "func-signdemo"
-          package: "."
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+      - name: Build ZIP artifact
+        run: |
+          ZIP="$GITHUB_WORKSPACE/api.zip"
+          rm -f "$ZIP"
+          zip -r "$ZIP" host.json package.json shared createAgreement addSigners approve getPdfSas sign finalize
+          ls -lh "$ZIP"
 
-      - name: Ensure Node runtime & app settings
-        uses: azure/cli@v2
+      # Login a Azure con Service Principal
+      - name: Azure Login
+        uses: azure/login@v1
         with:
-          inlineScript: |
-            az config set extension.use_dynamic_install=yes_without_prompt
-            az functionapp config appsettings set -g eSignDemo -n func-signdemo --settings WEBSITE_NODE_DEFAULT_VERSION=~18 FUNCTIONS_WORKER_RUNTIME=node FUNCTIONS_EXTENSION_VERSION=~4
-            # HMAC opcional por secreto
-            if [ -n "${{ secrets.HMAC_SECRET }}" ]; then
-              az functionapp config appsettings set -g eSignDemo -n func-signdemo --settings HMAC_SECRET=${{ secrets.HMAC_SECRET }}
-            fi
-            # Evitar certificados cliente obligatorios
-            az resource update \
-              --ids $(az functionapp show -g eSignDemo -n func-signdemo --query id -o tsv) \
-              --set properties.clientCertEnabled=false properties.clientCertMode=Optional
-            # Sincronizar triggers
-            SUB=$(az account show --query id -o tsv)
-            az rest --method POST --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/eSignDemo/providers/Microsoft.Web/sites/func-signdemo/syncfunctiontriggers?api-version=2024-11-01"
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy via Run-From-Package (Blob SAS)
+        env:
+          RG: eSignDemo
+          APP: func-signdemo
+        run: |
+          set -e
+
+          # 1) Descubrir Storage de la Function (el que creamos con Bicep)
+          STG=$(az storage account list -g "$RG" --query "[0].name" -o tsv)
+          CONN=$(az storage account show-connection-string -g "$RG" -n "$STG" -o tsv)
+
+          # 2) Subir el ZIP al contenedor function-releases
+          az storage container create --name function-releases --connection-string "$CONN" 1>/dev/null
+          TS=$(date +%Y%m%d%H%M%S)
+          BLOB="${TS}.zip"
+          az storage blob upload \
+            --connection-string "$CONN" \
+            --container-name function-releases \
+            --name "$BLOB" \
+            --file "$GITHUB_WORKSPACE/api.zip" \
+            --overwrite
+
+          # 3) Generar SAS de lectura
+          EXP="2035-12-31T23:59:59Z"
+          SAS=$(az storage blob generate-sas \
+            --connection-string "$CONN" \
+            --container-name function-releases \
+            --name "$BLOB" \
+            --permissions r \
+            --expiry $EXP \
+            --https-only -o tsv)
+
+          PKG_URL="https://${STG}.blob.core.windows.net/function-releases/${BLOB}?${SAS}"
+          echo "Paquete publicado en Blob (SAS oculto)."
+
+          # 4) Setear settings de runtime + apuntar al paquete ZIP
+          az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
+            WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" \
+            FUNCTIONS_WORKER_RUNTIME=node \
+            FUNCTIONS_EXTENSION_VERSION=~4 \
+            WEBSITE_NODE_DEFAULT_VERSION=~18
+
+          # HMAC opcional
+          if [ -n "${{ secrets.HMAC_SECRET }}" ]; then
+            az functionapp config appsettings set -g "$RG" -n "$APP" --settings HMAC_SECRET='${{ secrets.HMAC_SECRET }}'
+          fi
+
+          # Asegurar que NO requiera client cert
+          az resource update \
+            --ids $(az functionapp show -g "$RG" -n "$APP" --query id -o tsv) \
+            --set properties.clientCertEnabled=false properties.clientCertMode=Optional
+
+          # 5) Reiniciar
+          az functionapp restart -g "$RG" -n "$APP"
+
+          # 6) Sync triggers por ARM
+          SUB=$(az account show --query id -o tsv)
+          az rest --method POST \
+            --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/syncfunctiontriggers?api-version=2024-11-01"
+
+          # 7) Sync del host (usa master key)
+          MASTER=$(az functionapp keys list -g "$RG" -n "$APP" --query masterKey -o tsv)
+          curl -s "https://${APP}.azurewebsites.net/admin/host/status?code=${MASTER}" || true
+          curl -s -X POST "https://${APP}.azurewebsites.net/admin/host/synctriggers?code=${MASTER}" || true
+
+          # 8) Mostrar funciones detectadas
+          az functionapp function list -g "$RG" -n "$APP" -o table || true
