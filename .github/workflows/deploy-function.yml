@@ -31,17 +31,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Zip package
-        run: |
-          rm -f ../api.zip
-          zip -r ../api.zip host.json package.json shared createAgreement addSigners approve getPdfSas sign finalize
-        shell: bash
-
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
           app-name: "func-signdemo"
-          package: "../api.zip"
+          package: "."
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
       - name: Ensure Node runtime & app settings
