@@ -1,0 +1,63 @@
+name: Deploy FunctionApp (Node)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "api/**"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Validate function structure
+        run: |
+          test -f host.json || (echo "Falta host.json" && exit 1)
+          echo "Validando function.json..."
+          find . -maxdepth 2 -name function.json | grep function.json >/dev/null || (echo "No hay function.json" && exit 1)
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Zip package
+        run: |
+          rm -f ../api.zip
+          zip -r ../api.zip host.json package.json shared createAgreement addSigners approve getPdfSas sign finalize
+        shell: bash
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: "func-signdemo"
+          package: "../api.zip"
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+      - name: Ensure Node runtime & app settings
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az functionapp config appsettings set -g eSignDemo -n func-signdemo --settings WEBSITE_NODE_DEFAULT_VERSION=~18 FUNCTIONS_WORKER_RUNTIME=node FUNCTIONS_EXTENSION_VERSION=~4
+            # HMAC opcional por secreto
+            if [ -n "${{ secrets.HMAC_SECRET }}" ]; then
+              az functionapp config appsettings set -g eSignDemo -n func-signdemo --settings HMAC_SECRET=${{ secrets.HMAC_SECRET }}
+            fi
+            # Evitar certificados cliente obligatorios
+            az resource update \
+              --ids $(az functionapp show -g eSignDemo -n func-signdemo --query id -o tsv) \
+              --set properties.clientCertEnabled=false properties.clientCertMode=Optional
+            # Sincronizar triggers
+            SUB=$(az account show --query id -o tsv)
+            az rest --method POST --uri "https://management.azure.com/subscriptions/$SUB/resourceGroups/eSignDemo/providers/Microsoft.Web/sites/func-signdemo/syncfunctiontriggers?api-version=2024-11-01"
