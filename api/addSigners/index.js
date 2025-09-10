@@ -1,44 +1,43 @@
 const { table } = require('../shared/storage');
 const { issueToken } = require('../shared/tokens');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto'); // <- nativo en Node 18
 
 module.exports = async function (context, req) {
   try {
-    const { agreementId, signers, frontBaseUrl } = req.body || {};
+    const { agreementId, signers, frontBaseUrl } = (req.body || {});
     if (!agreementId || !Array.isArray(signers) || !frontBaseUrl) {
-      context.res = { status: 400, body: 'Datos inválidos' };
-      return;
+      return { status: 400, body: 'Datos inválidos' };
     }
 
     const Signers = table('Signers');
     const links = [];
 
     for (const s of signers) {
-      const signerId = uuidv4();
+      const signerId = randomUUID();
       await Signers.createEntity({
         partitionKey: agreementId,
         rowKey: signerId,
         Email: s.email,
         Name: s.name,
         Status: 'PENDING',
-        order: s.order ?? 0
+        Order: s.order ?? 0
       });
 
-      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120);
+      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120); // 2h
       links.push({
         name: s.name,
         email: s.email,
+        token, // <-- te lo devuelvo directo
         url: `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`
       });
     }
 
-    context.res = {
+    return {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: { ok: true, agreementId, links }
+      jsonBody: { ok: true, agreementId, links }
     };
   } catch (err) {
-    context.log.error('addSigners error', err);
-    context.res = { status: 500, body: 'Error interno' };
+    context.log.error('addSigners error', err?.stack || String(err));
+    return { status: 500, body: 'Error interno' };
   }
 };

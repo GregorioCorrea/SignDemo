@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<title>Admin - Demo Firma</title>
+<style> body{font-family:system-ui;margin:24px;max-width:900px} label{display:block;margin:.5rem 0} </style>
+<h1>Admin – Demo Firma</h1>
+
+<section>
+  <h2>1) Crear acuerdo</h2>
+  <label>Título: <input id="title" placeholder="Contrato AV-2025-001"></label>
+  <label>PDF: <input type="file" id="pdf"></label>
+  <button id="btnCreate">Crear</button>
+  <div id="createOut"></div>
+</section>
+
+<section>
+  <h2>2) Agregar firmantes y generar links</h2>
+  <div id="signers">
+    <div>Nombre: <input class="name"> Email: <input class="email"></div>
+  </div>
+  <button id="addRow">+ otro</button>
+  <button id="btnSigners">Generar links</button>
+  <div id="links"></div>
+</section>
+
+<section>
+  <h2>3) Aprobar</h2>
+  <button id="btnApprove">Aprobar</button>
+  <pre id="status"></pre>
+</section>
+
+<script>
+const API = 'https://func-signdemo.azurewebsites.net/api'; // pegá la URL de tu Function App
+let agreementId = null;
+const frontBase = location.origin;
+
+document.getElementById('addRow').onclick = () => {
+  const d = document.createElement('div');
+  d.innerHTML = 'Nombre: <input class="name"> Email: <input class="email">';
+  document.getElementById('signers').appendChild(d);
+};
+
+document.getElementById('btnCreate').onclick = async () => {
+  const f = document.getElementById('pdf').files[0];
+  if (!f) return alert('Subí un PDF');
+  const b64 = await f.arrayBuffer().then(b=>btoa(String.fromCharCode(...new Uint8Array(b))));
+  const title = document.getElementById('title').value || 'Contrato';
+  const res = await fetch(`${API}/createAgreement`, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ title, pdfBase64: b64, createdBy: 'backoffice@travelcare' })
+  }).then(r=>r.json());
+  agreementId = res.agreementId;
+  document.getElementById('createOut').textContent = `agreementId: ${agreementId}`;
+};
+
+document.getElementById('btnSigners').onclick = async () => {
+  if (!agreementId) return alert('Primero creá el acuerdo');
+  const rows = [...document.querySelectorAll('#signers div')].map(d => ({
+    name: d.querySelector('.name').value, email: d.querySelector('.email').value
+  })).filter(s=>s.email);
+  const res = await fetch(`${API}/addSigners`, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ agreementId, signers: rows, frontBaseUrl: frontBase })
+  }).then(r=>r.json());
+  document.getElementById('links').innerHTML = res.links.map(l=>`<div>${l.name} (${l.email}): <a target="_blank" href="${l.url}">Link de firma</a></div>`).join('');
+};
+
+document.getElementById('btnApprove').onclick = async () => {
+  if (!agreementId) return alert('Falta agreementId');
+  const res = await fetch(`${API}/approve`, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ agreementId, approver:'backoffice@travelcare' })
+  }).then(r=>r.json());
+  document.getElementById('status').textContent = JSON.stringify(res, null, 2);
+};
+</script>
+</html>
