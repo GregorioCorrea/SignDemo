@@ -28,7 +28,7 @@ jobs:
           find . -maxdepth 2 -name function.json | grep function.json >/dev/null || (echo "No hay function.json" && exit 1)
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Build ZIP artifact
         run: |
