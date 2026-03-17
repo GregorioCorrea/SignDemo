@@ -153,6 +153,45 @@
 <h3 class="text-3xl font-bold mt-1" id="statCompleted">1,156</h3>
 </div>
 </div>
+<!-- Agreements Table -->
+<div id="agreementsSection" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm overflow-hidden mb-8">
+  <div class="p-6 border-b border-primary/10 flex items-center justify-between">
+    <div>
+      <h2 class="text-xl font-bold">Acuerdos Recientes</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Lista de acuerdos extraída de la tabla Azure.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btnRefreshAgreements" class="inline-flex items-center gap-2 px-4 py-2 border border-primary/10 rounded-lg text-sm font-medium hover:bg-primary/5 transition-colors">
+        <span class="material-symbols-outlined">refresh</span> Actualizar
+      </button>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="bg-background-light dark:bg-slate-800/50">
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">ID</th>
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Título</th>
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Estado</th>
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Creado</th>
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Firmado</th>
+          <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="agreementsTbody" class="divide-y divide-primary/10">
+        <tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">Cargando acuerdos...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="p-4 border-t border-primary/10 flex items-center justify-between">
+    <p id="agreementsCount" class="text-xs text-slate-500">0 acuerdos</p>
+    <div class="flex gap-2">
+      <button id="prevPage" class="px-3 py-1 border border-primary/10 rounded-md text-sm disabled:opacity-50" disabled>Anterior</button>
+      <button id="nextPage" class="px-3 py-1 border border-primary/10 rounded-md text-sm hover:bg-primary/5 transition-colors">Siguiente</button>
+    </div>
+  </div>
+</div>
+
 <!-- CRUD Sections -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 <!-- Create Agreement -->
@@ -218,6 +257,69 @@ function setStatus(message, isError = false) {
 function setCreateOutput(message) {
   const out = document.getElementById('createOut');
   out.textContent = message;
+}
+
+async function openPdf(container, blob) {
+  if (!container || !blob) return alert('No hay archivo PDF disponible');
+  try {
+    const q = new URLSearchParams({ container, blob });
+    const res = await fetch(`${API}/getPdfSas?${q}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Error al obtener SAS');
+    window.open(data.url, '_blank');
+  } catch (err) {
+    alert('No se pudo abrir PDF: ' + (err.message || err));
+  }
+}
+
+async function loadAgreements(search = '') {
+  const tbody = document.getElementById('agreementsTbody');
+  const countEl = document.getElementById('agreementsCount');
+  tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">Cargando acuerdos...</td></tr>';
+  try {
+    const q = new URLSearchParams();
+    if (search) q.set('q', search);
+    const res = await fetch(`${API}/listAgreements?${q.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'No OK');
+
+    if (!Array.isArray(data.agreements) || data.agreements.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">No se encontraron acuerdos.</td></tr>';
+      countEl.textContent = '0 acuerdos';
+      return;
+    }
+
+    tbody.innerHTML = data.agreements.map(a => {
+      const when = a.createdUtc ? new Date(a.createdUtc).toLocaleString() : '—';
+      const signed = a.fullySignedUtc ? new Date(a.fullySignedUtc).toLocaleString() : 'Pendiente';
+      return `<tr class="hover:bg-primary/5 transition-colors group">
+        <td class="px-6 py-3 text-sm text-slate-500">${a.agreementId}</td>
+        <td class="px-6 py-3 text-sm font-semibold">${a.title || 'Sin título'}</td>
+        <td class="px-6 py-3 text-sm">
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${a.status === 'FullySigned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : a.status === 'Approved' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'}">${a.status || 'Created'}</span>
+        </td>
+        <td class="px-6 py-3 text-sm text-slate-500">${when}</td>
+        <td class="px-6 py-3 text-sm text-slate-500">${signed}</td>
+        <td class="px-6 py-3 text-sm">
+          <div class="flex flex-wrap gap-2">
+            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick="openPdf('${a.pdfContainer}','${a.pdfBlob}')">Ver PDF</button>
+            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick="document.getElementById('searchInput').value='${a.agreementId}'; loadAgreements('${a.agreementId}')">Buscar</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    countEl.textContent = `${data.count} acuerdos`;
+
+    const completed = data.agreements.filter(a => (a.status || '').toLowerCase() === 'fullysigned').length;
+    const pending = data.agreements.filter(a => (a.status || '').toLowerCase() !== 'fullysigned').length;
+    document.getElementById('statDocuments').textContent = data.count.toString();
+    document.getElementById('statCompleted').textContent = completed.toString();
+    document.getElementById('statPending').textContent = pending.toString();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-6 text-center text-red-500">Error cargando acuerdos: ${err.message || err}</td></tr>`;
+    countEl.textContent = 'Error en acuerdos';
+  }
 }
 
 function addSignerRow() {
@@ -290,6 +392,27 @@ document.getElementById('btnApprove').onclick = async () => {
     setStatus('Error al aprobar el acuerdo', true);
   }
 };
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  loadAgreements(e.target.value);
+});
+
+document.getElementById('btnRefreshAgreements').addEventListener('click', () => {
+  loadAgreements(document.getElementById('searchInput').value);
+});
+
+document.getElementById('btnExportAgreements').addEventListener('click', async () => {
+  const table = document.getElementById('agreementsTbody');
+  const rows = Array.from(table.querySelectorAll('tr')).map(r => Array.from(r.querySelectorAll('td')).map(td => td.textContent.trim()));
+  const csv = ['ID,Título,Estado,Creado,Firmado', ...rows.filter(r=>r.length===6).map(r => r.map( v=>`"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'agreements.csv';
+  a.click();
+});
+
+loadAgreements();
 
 // Auto-scroll to section when using sidebar links
 const links = document.querySelectorAll('a[href^="#"]');
