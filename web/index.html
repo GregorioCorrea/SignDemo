@@ -164,6 +164,9 @@
       <button id="btnRefreshAgreements" class="inline-flex items-center gap-2 px-4 py-2 border border-primary/10 rounded-lg text-sm font-medium hover:bg-primary/5 transition-colors">
         <span class="material-symbols-outlined">refresh</span> Actualizar
       </button>
+      <button id="btnExportAgreements" class="inline-flex items-center gap-2 px-4 py-2 border border-primary/10 rounded-lg text-sm font-medium hover:bg-primary/5 transition-colors">
+        <span class="material-symbols-outlined">download</span> Exportar CSV
+      </button>
     </div>
   </div>
   <div class="overflow-x-auto">
@@ -280,7 +283,15 @@ async function loadAgreements(search = '') {
     const q = new URLSearchParams();
     if (search) q.set('q', search);
     const res = await fetch(`${API}/listAgreements?${q.toString()}`);
-    const data = await res.json();
+    const text = await res.text();
+    if (!res.ok) throw new Error(`API HTTP ${res.status}: ${text}`);
+    if (!text) throw new Error('Respuesta vacía del API');
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error(`JSON inválido: ${parseErr.message} \n${text}`);
+    }
     if (!data.ok) throw new Error(data.error || 'No OK');
 
     if (!Array.isArray(data.agreements) || data.agreements.length === 0) {
@@ -401,8 +412,10 @@ document.getElementById('btnRefreshAgreements').addEventListener('click', () => 
   loadAgreements(document.getElementById('searchInput').value);
 });
 
-document.getElementById('btnExportAgreements').addEventListener('click', async () => {
-  const table = document.getElementById('agreementsTbody');
+const btnExportAgreements = document.getElementById('btnExportAgreements');
+if (btnExportAgreements) {
+  btnExportAgreements.addEventListener('click', async () => {
+    const table = document.getElementById('agreementsTbody');
   const rows = Array.from(table.querySelectorAll('tr')).map(r => Array.from(r.querySelectorAll('td')).map(td => td.textContent.trim()));
   const csv = ['ID,Título,Estado,Creado,Firmado', ...rows.filter(r=>r.length===6).map(r => r.map( v=>`"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
