@@ -1,67 +1,77 @@
 // api/createAgreement/index.js
-const { TableClient, AzureSASCredential, AzureNamedKeyCredential } = require("@azure/data-tables");
+const { table, containers } = require('../shared/storage');
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = async function (context, req) {
   try {
     const body = req.body || {};
-    const { agreementId, title, pdfContainer, pdfBlob } = body;
+    const title = (body.title || '').trim();
+    const pdfBase64 = (body.pdfBase64 || '').trim();
+    const createdBy = (body.createdBy || 'system').trim();
+    let agreementId = (body.agreementId || '').trim();
 
-    if (!agreementId || !pdfContainer || !pdfBlob) {
-      context.res = {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-        body: { error: "Faltan campos obligatorios: agreementId, pdfContainer, pdfBlob" }
-      };
+    if (!title) {
+      context.res = { status: 400, body: { error: 'Falta título (title)' } };
       return;
     }
 
-    // Conexión a Tables: preferimos TABLES_CONNECTION (connection string)
-    const tablesConn = process.env.TABLES_CONNECTION;
-    if (!tablesConn) {
-      context.res = { status: 500, body: { error: "TABLES_CONNECTION no configurado" } };
+    if (!agreementId) agreementId = uuidv4();
+
+    const agreementsTable = table('Agreements');
+    await agreementsTable.createTable({ onResponse: () => {} }).catch(() => {});
+
+    let pdfContainer = body.pdfContainer;
+    let pdfBlob = body.pdfBlob;
+
+    if (pdfBase64) {
+      pdfContainer = 'agreements';
+      pdfBlob = `${agreementId}.pdf`;
+      const pdfData = Buffer.from(pdfBase64, 'base64');
+      const containerClient = containers.agreements();
+      await containerClient.createIfNotExists({ access: 'container' });
+      const blockClient = containerClient.getBlockBlobClient(pdfBlob);
+      await blockClient.uploadData(pdfData, {
+        blobHTTPHeaders: { blobContentType: 'application/pdf' }
+      });
+    }
+
+    if (!pdfContainer || !pdfBlob) {
+      context.res = { status: 400, body: { error: 'Faltan pdfContainer o pdfBlob' } };
       return;
     }
 
-    // Crear cliente a partir del connection string
-    // TableClient.fromConnectionString(connectionString, tableName)
-    const tableName = "Agreements";
-    const tableClient = TableClient.fromConnectionString(tablesConn, tableName);
-
-    // Nos aseguramos que la tabla exista
-    await tableClient.createTable({ onResponse: () => {} }).catch(() => { /* ya existe */ });
-
-    // Entidad (PartitionKey y RowKey son obligatorios)
     const entity = {
-      partitionKey: "AGREEMENTS",
+      partitionKey: 'AGREEMENTS',
       rowKey: agreementId,
-      title: title || "",
+      title,
+      createdBy,
       pdfContainer,
       pdfBlob,
-      status: "Created",
+      status: 'Created',
       createdUtc: new Date().toISOString()
     };
 
-    // Upsert (replace) para que sea idempotente en demos
-    await tableClient.upsertEntity(entity, "Replace");
+    await agreementsTable.upsertEntity(entity, 'Merge');
 
     context.res = {
       status: 201,
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
       body: {
         ok: true,
         agreementId,
-        title: entity.title,
-        pdf: { container: pdfContainer, blob: pdfBlob },
+        title,
+        pdfContainer,
+        pdfBlob,
         status: entity.status,
         createdUtc: entity.createdUtc
       }
     };
   } catch (err) {
-    context.log.error("createAgreement error:", err);
+    context.log.error('createAgreement error:', err);
     context.res = {
       status: 500,
-      headers: { "Content-Type": "application/json" },
-      body: { error: "InternalError", detail: String(err && err.message || err) }
+      headers: { 'Content-Type': 'application/json' },
+      body: { error: 'InternalError', detail: String(err?.message || err) }
     };
   }
 };
