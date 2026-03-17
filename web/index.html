@@ -1,74 +1,306 @@
-<!doctype html>
-<html lang="es">
-<meta charset="utf-8">
-<title>Admin - Demo Firma</title>
-<style> body{font-family:system-ui;margin:24px;max-width:900px} label{display:block;margin:.5rem 0} </style>
-<h1>Admin – Demo Firma</h1>
+<!-- Panel de Administración - eSign -->
+<!DOCTYPE html>
 
-<section>
-  <h2>1) Crear acuerdo</h2>
-  <label>Título: <input id="title" placeholder="Contrato AV-2025-001"></label>
-  <label>PDF: <input type="file" id="pdf"></label>
-  <button id="btnCreate">Crear</button>
-  <div id="createOut"></div>
-</section>
-
-<section>
-  <h2>2) Agregar firmantes y generar links</h2>
-  <div id="signers">
-    <div>Nombre: <input class="name"> Email: <input class="email"></div>
-  </div>
-  <button id="addRow">+ otro</button>
-  <button id="btnSigners">Generar links</button>
-  <div id="links"></div>
-</section>
-
-<section>
-  <h2>3) Aprobar</h2>
-  <button id="btnApprove">Aprobar</button>
-  <pre id="status"></pre>
-</section>
-
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Incumate eSign - Panel de Administración</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#e60045",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#230f15",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .scrollbar-hidden::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+        .scrollbar-hidden {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 transition-colors duration-200">
+<div class="flex h-screen overflow-hidden">
+<!-- Sidebar Navigation -->
+<aside class="w-64 flex-shrink-0 border-r border-primary/10 bg-white dark:bg-background-dark hidden md:flex flex-col">
+<div class="p-6 flex items-center gap-3">
+<div class="size-10 bg-primary rounded-lg flex items-center justify-center text-white">
+<span class="material-symbols-outlined">draw</span>
+</div>
+<div>
+<h1 class="text-slate-900 dark:text-slate-100 text-base font-bold leading-tight">Incumate eSign</h1>
+<p class="text-primary text-xs font-medium uppercase tracking-wider">Panel de Administración</p>
+</div>
+</div>
+<nav class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 text-primary group" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-semibold">Panel</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-primary/5 hover:text-primary transition-all" href="#create">
+<span class="material-symbols-outlined">description</span>
+<span class="text-sm font-medium">Crear Acuerdo</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-primary/5 hover:text-primary transition-all" href="#signers">
+<span class="material-symbols-outlined">group</span>
+<span class="text-sm font-medium">Firmantes</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-primary/5 hover:text-primary transition-all" href="#approve">
+<span class="material-symbols-outlined">check_circle</span>
+<span class="text-sm font-medium">Aprobar</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-primary/5 hover:text-primary transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-sm font-medium">Configuración</span>
+</a>
+</nav>
+<div class="p-4 mt-auto">
+<div class="bg-primary/5 rounded-xl p-4 border border-primary/10">
+<p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Uso de Almacenamiento</p>
+<div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[65%]"></div>
+</div>
+<p class="text-[10px] mt-2 text-slate-500 dark:text-slate-400">65% de 500GB usado</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col overflow-hidden">
+<!-- Header -->
+<header class="h-20 border-b border-primary/10 bg-white dark:bg-background-dark flex items-center justify-between px-8">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
+<input id="searchInput" class="w-full bg-background-light dark:bg-slate-800 border-none rounded-xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20 transition-all" placeholder="Buscar acuerdos, firmantes o IDs..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button id="btnCreateNew" class="bg-primary hover:bg-primary/90 text-white flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-lg">add_circle</span>
+<span>Crear Nuevo Acuerdo</span>
+</button>
+<div class="flex items-center gap-4 pl-6 border-l border-primary/10">
+<div class="relative">
+<span class="material-symbols-outlined text-slate-500 hover:text-primary cursor-pointer">notifications</span>
+<span class="absolute top-0 right-0 size-2 bg-primary rounded-full border-2 border-white dark:border-background-dark"></span>
+</div>
+<div class="flex items-center gap-3">
+<div class="text-right hidden sm:block">
+<p class="text-sm font-bold leading-tight">Alex Rivera</p>
+<p class="text-[10px] text-slate-500 uppercase font-medium">Administrador</p>
+</div>
+<div class="size-10 rounded-full bg-slate-200 border-2 border-primary/20 bg-cover bg-center" data-alt="User profile avatar of Alex Rivera" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBK4m5fwsqJAiNAwPW8SDiBT7hDk8UgWlKVHd04GLd0cW_EJ7QSVquXeqqsfAS0U_JMBHSiAh-A2Gs8XZUVX_DxGAoDgdxCOm3RZImmyHzBrafX0zqRDP9yqdAIbOhHMGab9gylO1_5mi4T3EvAKl7MQLN896pwnt65cKXZejdYJEVpoEtDQiXbzD1FV22ETL3BIKdMjDlDzp45upoRgUYEQNbgraz3ZFD0Z0gH3EMbwQjZ1lpA1LWhUeFsghIVLS6qi0LkKxo4uLFC')"></div>
+</div>
+</div>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="flex-1 overflow-y-auto p-8 scrollbar-hidden">
+<!-- Stats Overview -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+<div class="bg-white dark:bg-background-dark border border-primary/10 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined p-2 bg-blue-50 text-blue-600 rounded-lg dark:bg-blue-900/20">description</span>
+<span class="text-green-500 text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> +12.5%
+                        </span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Documentos Totales</p>
+<h3 class="text-3xl font-bold mt-1" id="statDocuments">1,284</h3>
+</div>
+<div class="bg-white dark:bg-background-dark border border-primary/10 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined p-2 bg-amber-50 text-amber-600 rounded-lg dark:bg-amber-900/20">pending_actions</span>
+<span class="text-red-500 text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_down</span> -5%
+                        </span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Firmas Pendientes</p>
+<h3 class="text-3xl font-bold mt-1" id="statPending">42</h3>
+</div>
+<div class="bg-white dark:bg-background-dark border border-primary/10 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between mb-4">
+<span class="material-symbols-outlined p-2 bg-green-50 text-green-600 rounded-lg dark:bg-green-900/20">verified</span>
+<span class="text-green-500 text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> +18.2%
+                        </span>
+</div>
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Completados</p>
+<h3 class="text-3xl font-bold mt-1" id="statCompleted">1,156</h3>
+</div>
+</div>
+<!-- CRUD Sections -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Create Agreement -->
+<div id="create" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
+<h2 class="text-lg font-bold mb-4">1) Crear nuevo acuerdo</h2>
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Título</label>
+<input id="title" class="mt-1 w-full rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none" placeholder="Contrato AV-2025-001" />
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-4">PDF</label>
+<input id="pdf" type="file" accept="application/pdf" class="mt-1 w-full text-sm text-slate-600" />
+<button id="btnCreate" class="mt-6 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">upload_file</span>
+Crear Acuerdo
+</button>
+<div id="createOut" class="mt-4 text-sm text-slate-600 dark:text-slate-400 break-words"></div>
+</div>
+<!-- Add Signers -->
+<div id="signers" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
+<h2 class="text-lg font-bold mb-4">2) Agregar firmantes</h2>
+<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Agrega uno o más firmantes y genera los enlaces de firma.</p>
+<div id="signersList" class="space-y-3">
+<div class="flex flex-col sm:flex-row gap-3 items-start">
+<input class="name flex-1 rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm" placeholder="Nombre" />
+<input class="email flex-1 rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm" placeholder="Email" type="email" />
+</div>
+</div>
+<div class="flex flex-col sm:flex-row gap-3 mt-4">
+<button id="addRow" class="flex-1 inline-flex items-center justify-center gap-2 border border-primary/20 rounded-xl px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 transition-all">
+<span class="material-symbols-outlined">add</span>
+Agregar otro
+</button>
+<button id="btnSigners" class="flex-1 inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl px-4 py-2 text-sm font-bold transition-all">
+<span class="material-symbols-outlined">share</span>
+Generar enlaces
+</button>
+</div>
+<div id="links" class="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400"></div>
+</div>
+<!-- Approve -->
+<div id="approve" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
+<h2 class="text-lg font-bold mb-4">3) Aprobar acuerdo</h2>
+<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Autoriza la firma para completar el flujo.</p>
+<button id="btnApprove" class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">check_circle</span>
+Aprobar
+</button>
+<pre id="status" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-200 overflow-x-auto"></pre>
+</div>
+</div>
+</div>
+</main>
+</div>
 <script>
-const API = 'https://func-signdemo.azurewebsites.net/api'; // pegá la URL de tu Function App
+const API = 'https://func-signdemo.azurewebsites.net/api'; // Ajusta la URL a tu Function App
 let agreementId = null;
 const frontBase = location.origin;
 
-document.getElementById('addRow').onclick = () => {
-  const d = document.createElement('div');
-  d.innerHTML = 'Nombre: <input class="name"> Email: <input class="email">';
-  document.getElementById('signers').appendChild(d);
-};
+function setStatus(message, isError = false) {
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = message;
+  statusEl.classList.toggle('text-red-500', isError);
+}
+
+function setCreateOutput(message) {
+  const out = document.getElementById('createOut');
+  out.textContent = message;
+}
+
+function addSignerRow() {
+  const container = document.getElementById('signersList');
+  const row = document.createElement('div');
+  row.className = 'flex flex-col sm:flex-row gap-3 items-start';
+  row.innerHTML = `
+    <input class="name flex-1 rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm" placeholder="Nombre" />
+    <input class="email flex-1 rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm" placeholder="Email" type="email" />
+  `;
+  container.appendChild(row);
+}
+
+document.getElementById('addRow').onclick = () => addSignerRow();
 
 document.getElementById('btnCreate').onclick = async () => {
   const f = document.getElementById('pdf').files[0];
   if (!f) return alert('Subí un PDF');
   const b64 = await f.arrayBuffer().then(b=>btoa(String.fromCharCode(...new Uint8Array(b))));
   const title = document.getElementById('title').value || 'Contrato';
-  const res = await fetch(`${API}/createAgreement`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ title, pdfBase64: b64, createdBy: 'backoffice@travelcare' })
-  }).then(r=>r.json());
-  agreementId = res.agreementId;
-  document.getElementById('createOut').textContent = `agreementId: ${agreementId}`;
+  setCreateOutput('Creando acuerdo…');
+
+  try {
+    const res = await fetch(`${API}/createAgreement`, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ title, pdfBase64: b64, createdBy: 'backoffice@travelcare' })
+    }).then(r=>r.json());
+
+    agreementId = res.agreementId;
+    setCreateOutput(`agreementId: ${agreementId}`);
+  } catch (err) {
+    setCreateOutput('Error al crear el acuerdo.');
+  }
 };
 
 document.getElementById('btnSigners').onclick = async () => {
   if (!agreementId) return alert('Primero creá el acuerdo');
-  const rows = [...document.querySelectorAll('#signers div')].map(d => ({
-    name: d.querySelector('.name').value, email: d.querySelector('.email').value
+  const rows = [...document.querySelectorAll('#signersList div')].map(d => ({
+    name: d.querySelector('.name').value,
+    email: d.querySelector('.email').value
   })).filter(s=>s.email);
-  const res = await fetch(`${API}/addSigners`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ agreementId, signers: rows, frontBaseUrl: frontBase })
-  }).then(r=>r.json());
-  document.getElementById('links').innerHTML = res.links.map(l=>`<div>${l.name} (${l.email}): <a target="_blank" href="${l.url}">Link de firma</a></div>`).join('');
+  if (!rows.length) return alert('Agrega al menos un firmante con email');
+
+  document.getElementById('links').textContent = 'Generando enlaces…';
+  try {
+    const res = await fetch(`${API}/addSigners`, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ agreementId, signers: rows, frontBaseUrl: frontBase })
+    }).then(r=>r.json());
+
+    document.getElementById('links').innerHTML = res.links.map(l=>
+      `<div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-3 border border-slate-200 dark:border-slate-700">
+         <span class="font-semibold text-slate-800 dark:text-slate-100">${l.name}</span> (<span class="text-slate-500">${l.email}</span>):
+         <a class="text-primary font-semibold hover:underline" target="_blank" href="${l.url}">Link de firma</a>
+       </div>`
+    ).join('');
+  } catch (err) {
+    document.getElementById('links').textContent = 'Error al generar los enlaces.';
+  }
 };
 
 document.getElementById('btnApprove').onclick = async () => {
   if (!agreementId) return alert('Falta agreementId');
-  const res = await fetch(`${API}/approve`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ agreementId, approver:'backoffice@travelcare' })
-  }).then(r=>r.json());
-  document.getElementById('status').textContent = JSON.stringify(res, null, 2);
+  setStatus('Aprobando…');
+  try {
+    const res = await fetch(`${API}/approve`, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ agreementId, approver:'backoffice@travelcare' })
+    }).then(r=>r.json());
+
+    setStatus(JSON.stringify(res, null, 2));
+  } catch (err) {
+    setStatus('Error al aprobar el acuerdo', true);
+  }
 };
+
+// Auto-scroll to section when using sidebar links
+const links = document.querySelectorAll('a[href^="#"]');
+links.forEach(link => {
+  link.addEventListener('click', e => {
+    const target = document.querySelector(link.getAttribute('href'));
+    if (target) {
+      e.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
 </script>
-</html>
+</body></html>
