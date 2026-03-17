@@ -110,7 +110,6 @@ jobs:
 
       - name: Deploy static web files to Storage $web
         run: |
-          # Usa la misma cuenta de storage de la Function App para el frontend estático
           STG=$(az storage account list -g "$RG" --query "[0].name" -o tsv)
-          az storage blob service-properties update --account-name "$STG" --static-website --index-document index.html --error-document 404.html
+          az storage blob service-properties update --account-name "$STG" --static-website true --index-document index.html
           az storage blob upload-batch --account-name "$STG" -s "$GITHUB_WORKSPACE/web" -d '$web' --overwrite
