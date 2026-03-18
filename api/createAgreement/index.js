@@ -3,6 +3,7 @@ const { table, containers } = require('../shared/storage');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const { logEvent } = require('../shared/events');
+const { safeSendAgreementNotification } = require('../shared/email');
 
 module.exports = async function (context, req) {
   try {
@@ -10,6 +11,7 @@ module.exports = async function (context, req) {
     const title = (body.title || '').trim();
     const pdfBase64 = (body.pdfBase64 || '').trim();
     const createdBy = (body.createdBy || 'system').trim();
+    const notifyEmail = (body.notifyEmail || '').trim();
     let agreementId = (body.agreementId || '').trim();
 
     if (!title) {
@@ -27,11 +29,11 @@ module.exports = async function (context, req) {
 
     if (pdfBase64) {
       pdfContainer = 'agreements';
-      pdfBlob = `${agreementId}.pdf`;
+      pdfBlob = `${agreementId}/original.pdf`;
       const pdfData = Buffer.from(pdfBase64, 'base64');
       body.pdfSha256 = crypto.createHash('sha256').update(pdfData).digest('hex');
       const containerClient = containers.agreements();
-      await containerClient.createIfNotExists({ access: 'container' });
+      await containerClient.createIfNotExists();
       const blockClient = containerClient.getBlockBlobClient(pdfBlob);
       await blockClient.uploadData(pdfData, {
         blobHTTPHeaders: { blobContentType: 'application/pdf' }
@@ -48,6 +50,7 @@ module.exports = async function (context, req) {
       rowKey: agreementId,
       title,
       createdBy,
+      notifyEmail,
       pdfContainer,
       pdfBlob,
       pdfSha256: body.pdfSha256 || '',
@@ -59,10 +62,25 @@ module.exports = async function (context, req) {
     await logEvent(agreementId, 'AgreementCreated', {
       title,
       createdBy,
+      notifyEmail,
       pdfContainer,
       pdfBlob,
       pdfSha256: entity.pdfSha256
     }).catch(() => {});
+
+    await safeSendAgreementNotification(context, agreementId, entity, {
+      subject: `Acuerdo creado: ${title}`,
+      heading: 'Nuevo acuerdo registrado',
+      intro: 'Se creó un nuevo acuerdo en el circuito de firma.',
+      items: [
+        `Titulo: ${title}`,
+        `AgreementId: ${agreementId}`,
+        `Creado por: ${createdBy || 'N/D'}`,
+        `Estado: ${entity.status}`,
+        `Hash PDF: ${entity.pdfSha256 || 'No calculado'}`
+      ],
+      footer: 'Todavia falta cargar firmantes y aprobar el acuerdo para enviar invitaciones.'
+    }, 'AgreementCreationEmailSent');
 
     context.res = {
       status: 201,
@@ -71,6 +89,7 @@ module.exports = async function (context, req) {
         ok: true,
         agreementId,
         title,
+        notifyEmail,
         pdfContainer,
         pdfBlob,
         pdfSha256: entity.pdfSha256,

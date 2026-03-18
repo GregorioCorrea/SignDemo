@@ -99,6 +99,7 @@ module.exports = async function (context, req) {
         `${agreementId}/${signerId}.json`
       ]);
       const partialPdfBlob = await firstExistingBlob(agreementsContainer, [
+        entity.PartialPdfBlob,
         entity.SignedPdfBlob,
         `${agreementId}/partial/${signerId}.pdf`
       ]);
@@ -192,6 +193,7 @@ module.exports = async function (context, req) {
           agreementId,
           title: agreement.title || '',
           createdBy: agreement.createdBy || '',
+          notifyEmail: agreement.notifyEmail || '',
           status: normalizeStatus(agreement.status || agreement.Status || 'Created'),
           createdUtc: agreement.createdUtc || null,
           approvedUtc: agreement.approvedUtc || null,

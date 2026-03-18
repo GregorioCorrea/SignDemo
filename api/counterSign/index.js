@@ -1,6 +1,7 @@
 const { table, containers } = require('../shared/storage');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { logEvent } = require('../shared/events');
+const { safeSendAgreementNotification } = require('../shared/email');
 
 module.exports = async function (context, req) {
   try {
@@ -75,7 +76,7 @@ module.exports = async function (context, req) {
     page.drawText('Estado final: CounterSigned', { x: 52, y: 50, size: 10, font });
 
     await containers.signed().createIfNotExists();
-    const finalPdfBlob = `${agreementId}/final.pdf`;
+    const finalPdfBlob = `${agreementId}.pdf`;
     const finalPdf = await pdfDoc.save();
     await containers.signed().getBlockBlobClient(finalPdfBlob).uploadData(Buffer.from(finalPdf), {
       blobHTTPHeaders: { blobContentType: 'application/pdf' }
@@ -93,6 +94,18 @@ module.exports = async function (context, req) {
     }, 'Merge');
 
     await logEvent(agreementId, 'CounterSigned', { countersignedBy, finalPdfBlob }).catch(() => {});
+    await safeSendAgreementNotification(context, agreementId, agreement, {
+      subject: `Acuerdo contra-firmado: ${agreement.title || agreementId}`,
+      heading: 'Acuerdo finalizado',
+      intro: 'El acuerdo fue contra-firmado y ya cuenta con version final.',
+      items: [
+        `AgreementId: ${agreementId}`,
+        `Titulo: ${agreement.title || 'Sin titulo'}`,
+        `Contra-firmado por: ${countersignedBy}`,
+        `Estado final: CounterSigned`,
+        `PDF final: signed/${finalPdfBlob}`
+      ]
+    }, 'CounterSignEmailSent');
 
     context.res = {
       status: 200,

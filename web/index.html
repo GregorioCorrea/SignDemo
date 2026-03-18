@@ -270,10 +270,13 @@
 <!-- Create Agreement -->
 <div id="create" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
 <h2 class="text-lg font-bold mb-4">1) Crear nuevo acuerdo</h2>
+<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Carga el PDF base y definí un correo para recibir todas las novedades del flujo.</p>
 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Título</label>
 <input id="title" class="mt-1 w-full rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none" placeholder="Contrato AV-2025-001" />
 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-4">PDF</label>
 <input id="pdf" type="file" accept="application/pdf" class="mt-1 w-full text-sm text-slate-600" />
+<label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-4">Email de notificación</label>
+<input id="notifyEmail" type="email" class="mt-1 w-full rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none" placeholder="legal@empresa.com" />
 <button id="btnCreate" class="mt-6 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
 <span class="material-symbols-outlined">upload_file</span>
 Crear Acuerdo
@@ -305,7 +308,7 @@ Generar enlaces
 <!-- Approve -->
 <div id="approve" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
 <h2 class="text-lg font-bold mb-4">3) Aprobar acuerdo</h2>
-<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Autoriza la firma para completar el flujo.</p>
+<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Autoriza la firma, habilita el circuito y envia las invitaciones por correo.</p>
 <button id="btnApprove" class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
 <span class="material-symbols-outlined">check_circle</span>
 Aprobar
@@ -482,6 +485,7 @@ async function loadAgreementDetail(targetAgreementId) {
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Firmado completo:</span> ${escapeHtml(formatDate(data.agreement.fullySignedUtc))}</div>
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Contra-firmado:</span> ${escapeHtml(formatDate(data.agreement.countersignedUtc))}</div>
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Estado:</span> ${escapeHtml(data.agreement.status)}</div>
+    <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Notificaciones:</span> ${escapeHtml(data.agreement.notifyEmail || '—')}</div>
     <div class="rounded-lg border border-primary/10 p-3 lg:col-span-2 xl:col-span-3"><span class="font-semibold">PDF original:</span> ${escapeHtml(data.agreement.originalPdfUrl ? 'Disponible' : 'No encontrado')}</div>
   `;
 
@@ -583,14 +587,15 @@ document.getElementById('btnCreate').onclick = async () => {
   try {
     const pdfBase64 = encodeBase64(await file.arrayBuffer());
     const title = document.getElementById('title').value.trim() || 'Contrato';
+    const notifyEmail = document.getElementById('notifyEmail').value.trim();
     const res = await fetchJson(`${API}/createAgreement`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, pdfBase64, createdBy: 'backoffice@travelcare' })
+      body: JSON.stringify({ title, pdfBase64, createdBy: 'backoffice@travelcare', notifyEmail })
     });
 
     agreementId = res.agreementId;
-    setCreateOutput(`agreementId: ${agreementId}`);
+    setCreateOutput(`agreementId: ${agreementId}${res.notifyEmail ? ` · notificaciones: ${res.notifyEmail}` : ''}`);
     setStatus(`Acuerdo ${agreementId} creado.`, false);
     await loadAgreements(document.getElementById('searchInput').value);
   } catch (err) {

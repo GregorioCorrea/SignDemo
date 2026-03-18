@@ -36,27 +36,31 @@ module.exports = async function (context, req) {
       const signerId = randomUUID();
       const signerName = (signerInput.name || '').trim();
       const signerEmail = String(signerInput.email).trim();
+      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120);
+      const signUrl = `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`;
       await Signers.upsertEntity({
         partitionKey: agreementId,
         rowKey: signerId,
         Email: signerEmail,
         Name: signerName,
         Status: 'PENDING',
-        Order: signerInput.order ?? 0
+        Order: signerInput.order ?? 0,
+        SignToken: token,
+        SignUrl: signUrl
       }, 'Merge');
 
-      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120);
       links.push({
         name: signerName,
         email: signerEmail,
         token,
-        url: `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`
+        url: signUrl
       });
 
       await logEvent(agreementId, 'SignerAdded', {
         signerId,
         name: signerName,
-        email: signerEmail
+        email: signerEmail,
+        signUrl
       }).catch(() => {});
     }
 

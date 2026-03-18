@@ -3,6 +3,7 @@ const { verifyToken } = require('../shared/tokens');
 const { PDFDocument } = require('pdf-lib');
 const crypto = require('crypto');
 const { logEvent } = require('../shared/events');
+const { safeSendAgreementNotification } = require('../shared/email');
 
 module.exports = async function (context, req) {
   try {
@@ -65,8 +66,8 @@ module.exports = async function (context, req) {
       return;
     }
 
+    await containers.agreements().createIfNotExists();
     await containers.signatures().createIfNotExists();
-    await containers.signed().createIfNotExists();
 
     const signerName = String(body.signerName || signer.Name || '').trim();
     const signaturePng = Buffer.from(body.signaturePngBase64, 'base64');
@@ -102,7 +103,7 @@ module.exports = async function (context, req) {
       { blobHTTPHeaders: { blobContentType: 'application/json' } }
     );
 
-    let signedPdfBlob = '';
+    let partialPdfBlob = '';
     if (agreement.pdfContainer && agreement.pdfBlob) {
       const sourceBlob = containers.agreements().getBlockBlobClient(agreement.pdfBlob);
       const download = await sourceBlob.download();
@@ -119,8 +120,8 @@ module.exports = async function (context, req) {
       page.drawText(`IP: ${String(ip || 'N/D')}`, { x: 40, y: 82, size: 9 });
 
       const signedPdf = await pdfDoc.save();
-      signedPdfBlob = `${agreementId}/${signerId}.pdf`;
-      await containers.signed().getBlockBlobClient(signedPdfBlob).uploadData(Buffer.from(signedPdf), {
+      partialPdfBlob = `${agreementId}/partial/${signerId}.pdf`;
+      await containers.agreements().getBlockBlobClient(partialPdfBlob).uploadData(Buffer.from(signedPdf), {
         blobHTTPHeaders: { blobContentType: 'application/pdf' }
       });
     }
@@ -136,7 +137,8 @@ module.exports = async function (context, req) {
       SignatureBlob: signatureBlob,
       StrokesBlob: strokesBlob,
       ManifestBlob: manifestBlob,
-      SignedPdfBlob: signedPdfBlob
+      PartialPdfBlob: partialPdfBlob,
+      SignedPdfBlob: partialPdfBlob
     }, 'Merge');
 
     let pendingCount = 0;
@@ -161,13 +163,30 @@ module.exports = async function (context, req) {
       signerEmail: signer.Email || '',
       signedUtc: now,
       manifestBlob,
-      signedPdfBlob: signedPdfBlob || null
+      signedPdfBlob: partialPdfBlob || null
     }).catch(() => {});
+
+    await safeSendAgreementNotification(context, agreementId, agreement, {
+      subject: `Firma registrada: ${agreement.title || agreementId}`,
+      heading: 'Nueva firma registrada',
+      intro: 'Un firmante completo su paso del circuito.',
+      items: [
+        `AgreementId: ${agreementId}`,
+        `Firmante: ${signerName || signer.Email || signerId}`,
+        `Email: ${signer.Email || 'N/D'}`,
+        `Fecha servidor: ${now}`,
+        `IP: ${String(ip || 'N/D')}`,
+        `Estado actual: ${nextStatus}`
+      ],
+      footer: nextStatus === 'FullySigned'
+        ? 'Todos los firmantes completaron su parte. El acuerdo ya puede contra-firmarse.'
+        : 'Todavia quedan firmantes pendientes.'
+    }, 'SignerCompletionEmailSent');
 
     context.res = {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: { ok: true, agreementId, signerId, status: nextStatus, when: now, pendingCount, totalCount, hmac }
+      body: { ok: true, agreementId, signerId, status: nextStatus, when: now, pendingCount, totalCount, hmac, partialPdfBlob }
     };
   } catch (err) {
     context.log.error('Error en /sign', err);
