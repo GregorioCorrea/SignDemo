@@ -247,9 +247,9 @@ Aprobar
 </main>
 </div>
 <script>
-const API = 'https://func-signdemo.azurewebsites.net/api'; // Ajusta la URL a tu Function App
+const API = window.API_BASE || 'https://func-signdemo.azurewebsites.net/api';
 let agreementId = null;
-const frontBase = location.origin;
+const frontBase = `${location.origin}${location.pathname.replace(/\/[^/]*$/, '')}`;
 
 function setStatus(message, isError = false) {
   const statusEl = document.getElementById('status');
@@ -257,78 +257,133 @@ function setStatus(message, isError = false) {
   statusEl.classList.toggle('text-red-500', isError);
 }
 
-function setCreateOutput(message) {
+function setCreateOutput(message, isError = false) {
   const out = document.getElementById('createOut');
   out.textContent = message;
+  out.classList.toggle('text-red-500', isError);
+}
+
+function encodeBase64(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  let data = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`Respuesta no JSON (${response.status}): ${text}`);
+    }
+  }
+
+  if (!response.ok || (data && data.ok === false)) {
+    throw new Error(data?.detail || data?.error || `HTTP ${response.status}`);
+  }
+
+  return data || {};
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function badgeClass(status) {
+  if (status === 'FullySigned') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  if (status === 'Approved' || status === 'PartiallySigned') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
 }
 
 async function openPdf(container, blob) {
-  if (!container || !blob) return alert('No hay archivo PDF disponible');
+  if (!container || !blob) {
+    alert('No hay archivo PDF disponible');
+    return;
+  }
+
   try {
     const q = new URLSearchParams({ container, blob });
-    const res = await fetch(`${API}/getPdfSas?${q}`);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Error al obtener SAS');
-    window.open(data.url, '_blank');
+    const data = await fetchJson(`${API}/getPdfSas?${q.toString()}`);
+    window.open(data.url, '_blank', 'noopener,noreferrer');
   } catch (err) {
-    alert('No se pudo abrir PDF: ' + (err.message || err));
+    alert(`No se pudo abrir PDF: ${err.message || err}`);
   }
 }
+
+window.openPdf = openPdf;
+window.searchAgreement = function searchAgreement(id) {
+  document.getElementById('searchInput').value = id;
+  loadAgreements(id);
+};
 
 async function loadAgreements(search = '') {
   const tbody = document.getElementById('agreementsTbody');
   const countEl = document.getElementById('agreementsCount');
   tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">Cargando acuerdos...</td></tr>';
+
   try {
     const q = new URLSearchParams();
     if (search) q.set('q', search);
-    const res = await fetch(`${API}/listAgreements?${q.toString()}`);
-    const text = await res.text();
-    if (!res.ok) throw new Error(`API HTTP ${res.status}: ${text}`);
-    if (!text) throw new Error('Respuesta vacía del API');
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (parseErr) {
-      throw new Error(`JSON inválido: ${parseErr.message} \n${text}`);
-    }
-    if (!data.ok) throw new Error(data.error || 'No OK');
+    const data = await fetchJson(`${API}/listAgreements?${q.toString()}`);
 
     if (!Array.isArray(data.agreements) || data.agreements.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">No se encontraron acuerdos.</td></tr>';
       countEl.textContent = '0 acuerdos';
+      document.getElementById('statDocuments').textContent = '0';
+      document.getElementById('statCompleted').textContent = '0';
+      document.getElementById('statPending').textContent = '0';
       return;
     }
 
-    tbody.innerHTML = data.agreements.map(a => {
-      const when = a.createdUtc ? new Date(a.createdUtc).toLocaleString() : '—';
-      const signed = a.fullySignedUtc ? new Date(a.fullySignedUtc).toLocaleString() : 'Pendiente';
+    tbody.innerHTML = data.agreements.map((agreement) => {
+      const when = agreement.createdUtc ? new Date(agreement.createdUtc).toLocaleString() : '—';
+      const signed = agreement.fullySignedUtc ? new Date(agreement.fullySignedUtc).toLocaleString() : 'Pendiente';
+      const safeId = escapeHtml(agreement.agreementId);
+      const safeTitle = escapeHtml(agreement.title || 'Sin título');
+      const safeStatus = escapeHtml(agreement.status || 'Created');
+      const safeContainer = JSON.stringify(agreement.pdfContainer || '');
+      const safeBlob = JSON.stringify(agreement.pdfBlob || '');
+      const safeSearchId = JSON.stringify(agreement.agreementId || '');
+
       return `<tr class="hover:bg-primary/5 transition-colors group">
-        <td class="px-6 py-3 text-sm text-slate-500">${a.agreementId}</td>
-        <td class="px-6 py-3 text-sm font-semibold">${a.title || 'Sin título'}</td>
+        <td class="px-6 py-3 text-sm text-slate-500">${safeId}</td>
+        <td class="px-6 py-3 text-sm font-semibold">${safeTitle}</td>
         <td class="px-6 py-3 text-sm">
-          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${a.status === 'FullySigned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : a.status === 'Approved' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'}">${a.status || 'Created'}</span>
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${badgeClass(agreement.status)}">${safeStatus}</span>
         </td>
-        <td class="px-6 py-3 text-sm text-slate-500">${when}</td>
-        <td class="px-6 py-3 text-sm text-slate-500">${signed}</td>
+        <td class="px-6 py-3 text-sm text-slate-500">${escapeHtml(when)}</td>
+        <td class="px-6 py-3 text-sm text-slate-500">${escapeHtml(signed)}</td>
         <td class="px-6 py-3 text-sm">
           <div class="flex flex-wrap gap-2">
-            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick="openPdf('${a.pdfContainer}','${a.pdfBlob}')">Ver PDF</button>
-            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick="document.getElementById('searchInput').value='${a.agreementId}'; loadAgreements('${a.agreementId}')">Buscar</button>
+            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick='openPdf(${safeContainer}, ${safeBlob})'>Ver PDF</button>
+            <button class="px-2 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20" onclick='searchAgreement(${safeSearchId})'>Buscar</button>
           </div>
         </td>
       </tr>`;
     }).join('');
 
     countEl.textContent = `${data.count} acuerdos`;
-
-    const completed = data.agreements.filter(a => (a.status || '').toLowerCase() === 'fullysigned').length;
-    const pending = data.agreements.filter(a => (a.status || '').toLowerCase() !== 'fullysigned').length;
-    document.getElementById('statDocuments').textContent = data.count.toString();
-    document.getElementById('statCompleted').textContent = completed.toString();
-    document.getElementById('statPending').textContent = pending.toString();
+    const completed = data.agreements.filter((a) => (a.status || '') === 'FullySigned').length;
+    const pending = data.agreements.filter((a) => (a.status || '') !== 'FullySigned').length;
+    document.getElementById('statDocuments').textContent = String(data.count);
+    document.getElementById('statCompleted').textContent = String(completed);
+    document.getElementById('statPending').textContent = String(pending);
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-6 text-center text-red-500">Error cargando acuerdos: ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-6 text-center text-red-500">Error cargando acuerdos: ${escapeHtml(err.message || err)}</td></tr>`;
     countEl.textContent = 'Error en acuerdos';
   }
 }
@@ -344,98 +399,131 @@ function addSignerRow() {
   container.appendChild(row);
 }
 
+document.getElementById('btnCreateNew').addEventListener('click', () => {
+  document.getElementById('create').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('title').focus();
+});
+
 document.getElementById('addRow').onclick = () => addSignerRow();
 
 document.getElementById('btnCreate').onclick = async () => {
-  const f = document.getElementById('pdf').files[0];
-  if (!f) return alert('Subí un PDF');
-  const b64 = await f.arrayBuffer().then(b=>btoa(String.fromCharCode(...new Uint8Array(b))));
-  const title = document.getElementById('title').value || 'Contrato';
-  setCreateOutput('Creando acuerdo…');
+  const file = document.getElementById('pdf').files[0];
+  if (!file) {
+    alert('Subí un PDF');
+    return;
+  }
 
+  setCreateOutput('Creando acuerdo…');
   try {
-    const res = await fetch(`${API}/createAgreement`, { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ title, pdfBase64: b64, createdBy: 'backoffice@travelcare' })
-    }).then(r=>r.json());
+    const pdfBase64 = encodeBase64(await file.arrayBuffer());
+    const title = document.getElementById('title').value.trim() || 'Contrato';
+    const res = await fetchJson(`${API}/createAgreement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, pdfBase64, createdBy: 'backoffice@travelcare' })
+    });
 
     agreementId = res.agreementId;
     setCreateOutput(`agreementId: ${agreementId}`);
+    setStatus(`Acuerdo ${agreementId} creado.`, false);
+    await loadAgreements(document.getElementById('searchInput').value);
   } catch (err) {
-    setCreateOutput('Error al crear el acuerdo.');
+    setCreateOutput(`Error al crear el acuerdo: ${err.message || err}`, true);
   }
 };
 
 document.getElementById('btnSigners').onclick = async () => {
-  if (!agreementId) return alert('Primero creá el acuerdo');
-  const rows = [...document.querySelectorAll('#signersList div')].map(d => ({
-    name: d.querySelector('.name').value,
-    email: d.querySelector('.email').value
-  })).filter(s=>s.email);
-  if (!rows.length) return alert('Agrega al menos un firmante con email');
+  if (!agreementId) {
+    alert('Primero creá el acuerdo');
+    return;
+  }
 
-  document.getElementById('links').textContent = 'Generando enlaces…';
+  const rows = [...document.querySelectorAll('#signersList > div')]
+    .map((row) => ({
+      name: row.querySelector('.name').value.trim(),
+      email: row.querySelector('.email').value.trim()
+    }))
+    .filter((signer) => signer.email);
+
+  if (!rows.length) {
+    alert('Agrega al menos un firmante con email');
+    return;
+  }
+
+  const linksEl = document.getElementById('links');
+  linksEl.textContent = 'Generando enlaces…';
   try {
-    const res = await fetch(`${API}/addSigners`, { method:'POST', headers:{'Content-Type':'application/json'},
+    const res = await fetchJson(`${API}/addSigners`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agreementId, signers: rows, frontBaseUrl: frontBase })
-    }).then(r=>r.json());
+    });
 
-    document.getElementById('links').innerHTML = res.links.map(l=>
-      `<div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-3 border border-slate-200 dark:border-slate-700">
-         <span class="font-semibold text-slate-800 dark:text-slate-100">${l.name}</span> (<span class="text-slate-500">${l.email}</span>):
-         <a class="text-primary font-semibold hover:underline" target="_blank" href="${l.url}">Link de firma</a>
-       </div>`
-    ).join('');
+    linksEl.innerHTML = res.links.map((link) => `
+      <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-3 border border-slate-200 dark:border-slate-700">
+        <span class="font-semibold text-slate-800 dark:text-slate-100">${escapeHtml(link.name || 'Firmante')}</span>
+        (<span class="text-slate-500">${escapeHtml(link.email)}</span>):
+        <a class="text-primary font-semibold hover:underline break-all" target="_blank" rel="noopener noreferrer" href="${escapeHtml(link.url)}">Link de firma</a>
+      </div>
+    `).join('');
+    setStatus(`Se generaron ${res.count} enlaces de firma.`, false);
   } catch (err) {
-    document.getElementById('links').textContent = 'Error al generar los enlaces.';
+    linksEl.textContent = `Error al generar los enlaces: ${err.message || err}`;
   }
 };
 
 document.getElementById('btnApprove').onclick = async () => {
-  if (!agreementId) return alert('Falta agreementId');
+  if (!agreementId) {
+    alert('Falta agreementId');
+    return;
+  }
+
   setStatus('Aprobando…');
   try {
-    const res = await fetch(`${API}/approve`, { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ agreementId, approver:'backoffice@travelcare' })
-    }).then(r=>r.json());
+    const res = await fetchJson(`${API}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agreementId, approvedBy: 'backoffice@travelcare' })
+    });
 
-    setStatus(JSON.stringify(res, null, 2));
+    setStatus(JSON.stringify(res, null, 2), false);
+    await loadAgreements(document.getElementById('searchInput').value);
   } catch (err) {
-    setStatus('Error al aprobar el acuerdo', true);
+    setStatus(`Error al aprobar el acuerdo: ${err.message || err}`, true);
   }
 };
 
 document.getElementById('searchInput').addEventListener('input', (e) => {
-  loadAgreements(e.target.value);
+  loadAgreements(e.target.value.trim());
 });
 
 document.getElementById('btnRefreshAgreements').addEventListener('click', () => {
-  loadAgreements(document.getElementById('searchInput').value);
+  loadAgreements(document.getElementById('searchInput').value.trim());
 });
 
-const btnExportAgreements = document.getElementById('btnExportAgreements');
-if (btnExportAgreements) {
-  btnExportAgreements.addEventListener('click', async () => {
-    const table = document.getElementById('agreementsTbody');
-  const rows = Array.from(table.querySelectorAll('tr')).map(r => Array.from(r.querySelectorAll('td')).map(td => td.textContent.trim()));
-  const csv = ['ID,Título,Estado,Creado,Firmado', ...rows.filter(r=>r.length===6).map(r => r.map( v=>`"${v.replace(/"/g,'""')}"`).join(','))].join('\n');
+document.getElementById('btnExportAgreements').addEventListener('click', () => {
+  const table = document.getElementById('agreementsTbody');
+  const rows = Array.from(table.querySelectorAll('tr'))
+    .map((row) => Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent.trim()))
+    .filter((row) => row.length === 6)
+    .map((row) => row.slice(0, 5));
+  const csv = ['ID,Título,Estado,Creado,Firmado', ...rows.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'agreements.csv';
-  a.click();
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = 'agreements.csv';
+  anchor.click();
+  URL.revokeObjectURL(anchor.href);
 });
 
 loadAgreements();
 
-// Auto-scroll to section when using sidebar links
-const links = document.querySelectorAll('a[href^="#"]');
-links.forEach(link => {
-  link.addEventListener('click', e => {
+document.querySelectorAll('a[href^="#"]').forEach((link) => {
+  link.addEventListener('click', (e) => {
     const target = document.querySelector(link.getAttribute('href'));
-    if (target) {
-      e.preventDefault();
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
 </script>

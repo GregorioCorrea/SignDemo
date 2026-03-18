@@ -1,43 +1,69 @@
 const { table } = require('../shared/storage');
 const { issueToken } = require('../shared/tokens');
-const { randomUUID } = require('crypto'); // <- nativo en Node 18
+const { randomUUID } = require('crypto');
 
 module.exports = async function (context, req) {
   try {
-    const { agreementId, signers, frontBaseUrl } = (req.body || {});
+    const { agreementId, signers, frontBaseUrl } = req.body || {};
     if (!agreementId || !Array.isArray(signers) || !frontBaseUrl) {
-      return { status: 400, body: 'Datos inválidos' };
+      context.res = {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+        body: { ok: false, error: 'Datos inválidos' }
+      };
+      return;
     }
 
+    const Agreements = table('Agreements');
     const Signers = table('Signers');
-    const links = [];
+    await Signers.createTable({ onResponse: () => {} }).catch(() => {});
 
-    for (const s of signers) {
+    const agreement = await Agreements.getEntity('AGREEMENTS', agreementId).catch(() => null);
+    if (!agreement) {
+      context.res = {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+        body: { ok: false, error: 'Acuerdo no encontrado' }
+      };
+      return;
+    }
+
+    const links = [];
+    for (const signerInput of signers) {
+      if (!signerInput || !signerInput.email) continue;
+
       const signerId = randomUUID();
-      await Signers.createEntity({
+      const signerName = (signerInput.name || '').trim();
+      const signerEmail = String(signerInput.email).trim();
+      await Signers.upsertEntity({
         partitionKey: agreementId,
         rowKey: signerId,
-        Email: s.email,
-        Name: s.name,
+        Email: signerEmail,
+        Name: signerName,
         Status: 'PENDING',
-        Order: s.order ?? 0
-      });
+        Order: signerInput.order ?? 0
+      }, 'Merge');
 
-      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120); // 2h
+      const token = issueToken({ agreementId, signerId, role: 'signer' }, 120);
       links.push({
-        name: s.name,
-        email: s.email,
-        token, // <-- te lo devuelvo directo
+        name: signerName,
+        email: signerEmail,
+        token,
         url: `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`
       });
     }
 
-    return {
+    context.res = {
       status: 200,
-      jsonBody: { ok: true, agreementId, links }
+      headers: { 'Content-Type': 'application/json' },
+      body: { ok: true, agreementId, count: links.length, links }
     };
   } catch (err) {
     context.log.error('addSigners error', err?.stack || String(err));
-    return { status: 500, body: 'Error interno' };
+    context.res = {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: { ok: false, error: 'Error interno', detail: String(err?.message || err) }
+    };
   }
 };

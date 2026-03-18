@@ -193,13 +193,35 @@ import SignaturePad from "https://cdn.skypack.dev/signature_pad";
 
 const params = new URLSearchParams(location.search);
 const token = params.get('token');
-const API = 'https://func-signdemo.azurewebsites.net/api';
+const API = window.API_BASE || 'https://func-signdemo.azurewebsites.net/api';
 
 const viewer = document.getElementById('viewer');
 const pageInfo = document.getElementById('pageInfo');
+const documentTitle = document.getElementById('documentTitle');
+const documentSubtitle = document.getElementById('documentSubtitle');
 
 function setStatusMessage(message) {
   pageInfo.textContent = message;
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  let data = {};
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new Error(text);
+    }
+  }
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+  }
+
+  return data;
 }
 
 async function loadPdf() {
@@ -211,18 +233,23 @@ async function loadPdf() {
 
   setStatusMessage('Cargando documento...');
   try {
-    const r = await fetch(`${API}/getPdfSas?token=${encodeURIComponent(token)}`).then(r=>r.json());
+    const data = await fetchJson(`${API}/getPdfSas?token=${encodeURIComponent(token)}`);
+    if (data.title) {
+      documentTitle.textContent = data.title;
+      documentSubtitle.textContent = 'Revisa el documento y firma en el recuadro inferior para completar el proceso.';
+    }
+
     const objectEl = document.createElement('object');
-    objectEl.data = r.url;
+    objectEl.data = data.url;
     objectEl.type = 'application/pdf';
     objectEl.width = '100%';
     objectEl.height = '600';
     viewer.innerHTML = '';
     viewer.appendChild(objectEl);
-    setStatusMessage('Página 1 de 1');
+    setStatusMessage('Documento cargado');
   } catch (err) {
     viewer.innerHTML = `<div class="p-10 text-center text-red-500">No se pudo cargar el documento.</div>`;
-    setStatusMessage('Error al cargar');
+    setStatusMessage(`Error al cargar: ${err.message || err}`);
   }
 }
 
@@ -250,8 +277,14 @@ document.getElementById('btnClear').onclick = () => {
 };
 
 document.getElementById('btnSign').onclick = async () => {
-  if (!document.getElementById('consent').checked) return alert('Falta consentimiento');
-  if (signaturePad.isEmpty()) return alert('Falta la firma');
+  if (!document.getElementById('consent').checked) {
+    alert('Falta consentimiento');
+    return;
+  }
+  if (signaturePad.isEmpty()) {
+    alert('Falta la firma');
+    return;
+  }
 
   const body = {
     token,
@@ -263,16 +296,21 @@ document.getElementById('btnSign').onclick = async () => {
 
   setStatusMessage('Enviando firma...');
   try {
-    const res = await fetch(`${API}/sign`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r=>r.json());
-    setStatusMessage('Firma enviada');
+    const res = await fetchJson(`${API}/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    setStatusMessage(`Firma registrada. Estado: ${res.status}`);
     alert('Firma enviada correctamente.');
+    document.getElementById('btnSign').disabled = true;
   } catch (err) {
-    setStatusMessage('Error al enviar firma');
-    alert('Error al enviar la firma.');
+    setStatusMessage(`Error al enviar firma: ${err.message || err}`);
+    alert(`Error al enviar la firma: ${err.message || err}`);
   }
 };
 
-// Cancel button simply goes back
 document.getElementById('btnCancel').onclick = () => {
   history.back();
 };

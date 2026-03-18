@@ -5,6 +5,9 @@ module.exports = async function (context, req) {
     const search = ((req.query?.q || req.body?.q || '') + '').trim().toLowerCase();
     const Agreements = table('Agreements');
 
+    // Garantiza que la tabla exista (puede ser la primera llamada, antes de crear el primer acuerdo)
+    await Agreements.createTable({ onResponse: () => {} }).catch(() => {});
+
     const rows = [];
     for await (const entity of Agreements.listEntities()) {
       const item = {
