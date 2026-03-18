@@ -113,6 +113,9 @@ module.exports = async function (context, req) {
       const signerName = entity.Name || '';
       const signerEmail = entity.Email || '';
       const status = normalizeStatus(entity.Status || entity.status || 'PENDING');
+      const signatureSha256 = entity.SignatureSha256 || null;
+      const strokesSha256 = entity.StrokesSha256 || null;
+      const evidenceHmac = entity.EvidenceHmac || null;
 
       signers.push({
         signerId,
@@ -128,6 +131,9 @@ module.exports = async function (context, req) {
         signedPdfUrl: individualSignedBlob ? sasForBlob('signed', individualSignedBlob, 60) : null,
         operationRecord: {
           pdfSha256,
+          signatureSha256,
+          strokesSha256,
+          evidenceHmac,
           signedUtc,
           ip,
           userAgent,
@@ -168,7 +174,9 @@ module.exports = async function (context, req) {
           signerName: signer.name,
           signerEmail: signer.email,
           ip: signer.ip,
-          pdfSha256
+          pdfSha256,
+          signatureSha256: signer.operationRecord.signatureSha256,
+          evidenceHmac: signer.operationRecord.evidenceHmac
         }
       });
     }

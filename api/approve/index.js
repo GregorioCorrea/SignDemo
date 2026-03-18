@@ -29,6 +29,15 @@ module.exports = async function (context, req) {
       return;
     }
 
+    if (!agreement.pdfContainer || !agreement.pdfBlob) {
+      context.res = {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+        body: { ok: false, error: 'No se puede aprobar un acuerdo sin PDF asociado' }
+      };
+      return;
+    }
+
     let signerCount = 0;
     const signers = [];
     for await (const signer of Signers.listEntities({ queryOptions: { filter: `PartitionKey eq '${agreementId}'` } })) {

@@ -71,6 +71,11 @@ module.exports = async function (context, req) {
 
     const signerName = String(body.signerName || signer.Name || '').trim();
     const signaturePng = Buffer.from(body.signaturePngBase64, 'base64');
+    const signatureSha256 = crypto.createHash('sha256').update(signaturePng).digest('hex');
+    const strokesSha256 = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(body.signatureStrokes || []))
+      .digest('hex');
     const signatureBlob = `${agreementId}/${signerId}.png`;
     const strokesBlob = `${agreementId}/${signerId}.json`;
     const manifestBlob = `${agreementId}/${signerId}-manifest.json`;
@@ -89,6 +94,8 @@ module.exports = async function (context, req) {
       signerEmail: signer.Email || '',
       signerName,
       pdfSha256: agreement.pdfSha256 || '',
+      signatureSha256,
+      strokesSha256,
       consent: true,
       timestampUtc: now,
       ip: String(ip),
@@ -137,6 +144,9 @@ module.exports = async function (context, req) {
       SignatureBlob: signatureBlob,
       StrokesBlob: strokesBlob,
       ManifestBlob: manifestBlob,
+      SignatureSha256: signatureSha256,
+      StrokesSha256: strokesSha256,
+      EvidenceHmac: hmac,
       PartialPdfBlob: partialPdfBlob,
       SignedPdfBlob: partialPdfBlob
     }, 'Merge');
@@ -162,6 +172,8 @@ module.exports = async function (context, req) {
       signerName,
       signerEmail: signer.Email || '',
       signedUtc: now,
+      signatureSha256,
+      strokesSha256,
       manifestBlob,
       signedPdfBlob: partialPdfBlob || null
     }).catch(() => {});

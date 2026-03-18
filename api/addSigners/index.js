@@ -29,13 +29,29 @@ module.exports = async function (context, req) {
       return;
     }
 
+    const existingEmails = new Set();
+    for await (const signer of Signers.listEntities({ queryOptions: { filter: `PartitionKey eq '${agreementId}'` } })) {
+      existingEmails.add(String(signer.Email || '').trim().toLowerCase());
+    }
+
+    const inputEmails = new Set();
     const links = [];
     for (const signerInput of signers) {
       if (!signerInput || !signerInput.email) continue;
+      const signerEmail = String(signerInput.email).trim();
+      const signerEmailKey = signerEmail.toLowerCase();
+      if (existingEmails.has(signerEmailKey) || inputEmails.has(signerEmailKey)) {
+        context.res = {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+          body: { ok: false, error: `El correo ${signerEmail} ya existe en este acuerdo` }
+        };
+        return;
+      }
+      inputEmails.add(signerEmailKey);
 
       const signerId = randomUUID();
       const signerName = (signerInput.name || '').trim();
-      const signerEmail = String(signerInput.email).trim();
       const token = issueToken({ agreementId, signerId, role: 'signer' }, 120);
       const signUrl = `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`;
       await Signers.upsertEntity({

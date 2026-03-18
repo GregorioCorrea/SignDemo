@@ -237,9 +237,9 @@
         </button>
         <div id="detailActionsPanel" class="p-5 border-t border-primary/10">
           <div class="flex flex-wrap gap-3 mb-4">
-            <button id="detailOpenOriginal" class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90">Ver PDF original</button>
-            <button id="detailOpenFinal" class="px-4 py-2 rounded-lg border border-primary/10 text-sm font-semibold hover:bg-primary/5">Ver PDF final</button>
-            <button id="detailCounterSign" class="px-4 py-2 rounded-lg border border-primary/10 text-sm font-semibold hover:bg-primary/5">Contra-firmar</button>
+            <button id="detailOpenOriginal" class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed">Ver PDF original</button>
+            <button id="detailOpenFinal" class="px-4 py-2 rounded-lg border border-primary/10 text-sm font-semibold hover:bg-primary/5 disabled:opacity-60 disabled:cursor-not-allowed">Ver PDF final</button>
+            <button id="detailCounterSign" class="px-4 py-2 rounded-lg border border-primary/10 text-sm font-semibold hover:bg-primary/5 disabled:opacity-60 disabled:cursor-not-allowed">Contra-firmar</button>
           </div>
           <div id="detailMeta" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 text-sm text-slate-600"></div>
         </div>
@@ -277,7 +277,7 @@
 <input id="pdf" type="file" accept="application/pdf" class="mt-1 w-full text-sm text-slate-600" />
 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-4">Email de notificación</label>
 <input id="notifyEmail" type="email" class="mt-1 w-full rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none" placeholder="legal@empresa.com" />
-<button id="btnCreate" class="mt-6 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
+<button id="btnCreate" class="mt-6 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20 disabled:opacity-60 disabled:cursor-not-allowed">
 <span class="material-symbols-outlined">upload_file</span>
 Crear Acuerdo
 </button>
@@ -294,11 +294,11 @@ Crear Acuerdo
 </div>
 </div>
 <div class="flex flex-col sm:flex-row gap-3 mt-4">
-<button id="addRow" class="flex-1 inline-flex items-center justify-center gap-2 border border-primary/20 rounded-xl px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 transition-all">
+<button id="addRow" class="flex-1 inline-flex items-center justify-center gap-2 border border-primary/20 rounded-xl px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
 <span class="material-symbols-outlined">add</span>
 Agregar otro
 </button>
-<button id="btnSigners" class="flex-1 inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl px-4 py-2 text-sm font-bold transition-all">
+<button id="btnSigners" class="flex-1 inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl px-4 py-2 text-sm font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed">
 <span class="material-symbols-outlined">share</span>
 Generar enlaces
 </button>
@@ -309,7 +309,7 @@ Generar enlaces
 <div id="approve" class="bg-white dark:bg-background-dark rounded-xl border border-primary/10 shadow-sm p-6">
 <h2 class="text-lg font-bold mb-4">3) Aprobar acuerdo</h2>
 <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Autoriza la firma, habilita el circuito y envia las invitaciones por correo.</p>
-<button id="btnApprove" class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20">
+<button id="btnApprove" class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white rounded-xl py-3 text-sm font-bold transition-all shadow-lg shadow-primary/20 disabled:opacity-60 disabled:cursor-not-allowed">
 <span class="material-symbols-outlined">check_circle</span>
 Aprobar
 </button>
@@ -324,6 +324,12 @@ const API = window.API_BASE || 'https://func-signdemo.azurewebsites.net/api';
 let agreementId = null;
 let selectedAgreement = null;
 const frontBase = `${location.origin}${location.pathname.replace(/\/[^/]*$/, '')}`;
+const workflowState = {
+  hasAgreement: false,
+  hasPdf: false,
+  signerCount: 0,
+  status: 'Created'
+};
 
 function setStatus(message, isError = false) {
   const statusEl = document.getElementById('status');
@@ -375,6 +381,58 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function translateStatus(status) {
+  const map = {
+    Created: 'Creado',
+    Approved: 'Aprobado',
+    PartiallySigned: 'Firma parcial',
+    FullySigned: 'Firmado completo',
+    CounterSigned: 'Contra-firmado',
+    PENDING: 'Pendiente',
+    SIGNED: 'Firmado'
+  };
+  return map[status] || status || 'Sin estado';
+}
+
+function setButtonBusy(button, busy, busyText) {
+  if (!button.dataset.originalHtml) {
+    button.dataset.originalHtml = button.innerHTML;
+  }
+  button.disabled = busy;
+  if (busy) {
+    button.innerHTML = `<span class="inline-block size-4 border-2 border-current border-r-transparent rounded-full animate-spin"></span><span>${escapeHtml(busyText || 'Procesando...')}</span>`;
+  } else {
+    button.innerHTML = button.dataset.originalHtml;
+  }
+}
+
+function setWorkflowState(patch = {}) {
+  Object.assign(workflowState, patch);
+  updateWorkflowControls();
+}
+
+function updateWorkflowControls() {
+  const signerInputs = document.querySelectorAll('#signersList input');
+  const addRowBtn = document.getElementById('addRow');
+  const signersBtn = document.getElementById('btnSigners');
+  const approveBtn = document.getElementById('btnApprove');
+
+  const canEditSigners = workflowState.hasAgreement;
+  signerInputs.forEach((input) => { input.disabled = !canEditSigners; });
+  addRowBtn.disabled = !canEditSigners;
+  signersBtn.disabled = !canEditSigners;
+
+  const canApprove = workflowState.hasAgreement && workflowState.hasPdf && workflowState.signerCount > 0;
+  approveBtn.disabled = !canApprove;
+
+  const linksEl = document.getElementById('links');
+  const placeholder = canEditSigners ? '' : 'Primero creá el acuerdo para habilitar la carga de firmantes.';
+  linksEl.dataset.placeholder = placeholder;
+  if (placeholder && !linksEl.textContent.trim()) {
+    linksEl.textContent = placeholder;
+  }
 }
 
 function badgeClass(status) {
@@ -439,13 +497,15 @@ function renderSignerCard(signer) {
         <div class="space-y-2 min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm font-bold">${escapeHtml(signer.name || 'Sin nombre')}</span>
-            <span class="text-xs px-2 py-1 rounded-full ${badgeClass(signer.status)}">${escapeHtml(signer.status)}</span>
+            <span class="text-xs px-2 py-1 rounded-full ${badgeClass(signer.status)}">${escapeHtml(translateStatus(signer.status))}</span>
           </div>
           <p class="text-sm text-slate-500 break-all">${escapeHtml(signer.email || 'Sin email')}</p>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-500">
             <p>Firmado: ${escapeHtml(formatDate(signer.signedUtc))}</p>
             <p>IP: ${escapeHtml(signer.ip || '—')}</p>
             <p class="md:col-span-2 break-all">Hash PDF: ${escapeHtml(record.pdfSha256 || 'No calculado')}</p>
+            <p class="md:col-span-2 break-all">Hash firma: ${escapeHtml(record.signatureSha256 || 'No calculado')}</p>
+            <p class="md:col-span-2 break-all">HMAC evidencia: ${escapeHtml(record.evidenceHmac || 'No calculado')}</p>
             <p class="md:col-span-2 break-all">User-Agent: ${escapeHtml(record.userAgent || '—')}</p>
           </div>
           <div class="flex flex-wrap gap-3 text-sm">${actions.join('')}</div>
@@ -476,7 +536,7 @@ async function loadAgreementDetail(targetAgreementId) {
   document.getElementById('agreementDetailSection').classList.remove('hidden');
   document.getElementById('detailTitle').textContent = data.agreement.title || data.agreement.agreementId;
   document.getElementById('detailSubtitle').textContent = `Acuerdo ${data.agreement.agreementId} · Creado por ${data.agreement.createdBy || 'N/D'}`;
-  document.getElementById('detailStatus').innerHTML = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium ${badgeClass(data.agreement.status)}">${escapeHtml(data.agreement.status)}</span>`;
+  document.getElementById('detailStatus').innerHTML = `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium ${badgeClass(data.agreement.status)}">${escapeHtml(translateStatus(data.agreement.status))}</span>`;
   document.getElementById('detailSignerCount').textContent = `${data.agreement.signedCount}/${data.agreement.signerCount}`;
   document.getElementById('detailCreatedUtc').textContent = formatDate(data.agreement.createdUtc);
   document.getElementById('detailHash').textContent = data.agreement.pdfSha256 || 'No calculado';
@@ -484,7 +544,7 @@ async function loadAgreementDetail(targetAgreementId) {
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Aprobado:</span> ${escapeHtml(formatDate(data.agreement.approvedUtc))}</div>
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Firmado completo:</span> ${escapeHtml(formatDate(data.agreement.fullySignedUtc))}</div>
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Contra-firmado:</span> ${escapeHtml(formatDate(data.agreement.countersignedUtc))}</div>
-    <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Estado:</span> ${escapeHtml(data.agreement.status)}</div>
+    <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Estado:</span> ${escapeHtml(translateStatus(data.agreement.status))}</div>
     <div class="rounded-lg border border-primary/10 p-3"><span class="font-semibold">Notificaciones:</span> ${escapeHtml(data.agreement.notifyEmail || '—')}</div>
     <div class="rounded-lg border border-primary/10 p-3 lg:col-span-2 xl:col-span-3"><span class="font-semibold">PDF original:</span> ${escapeHtml(data.agreement.originalPdfUrl ? 'Disponible' : 'No encontrado')}</div>
   `;
@@ -499,6 +559,12 @@ async function loadAgreementDetail(targetAgreementId) {
   document.getElementById('detailOpenOriginal').disabled = !data.agreement.originalPdfUrl;
   document.getElementById('detailOpenFinal').disabled = !data.agreement.finalPdfUrl;
   document.getElementById('detailCounterSign').disabled = data.agreement.status !== 'FullySigned';
+  setWorkflowState({
+    hasAgreement: true,
+    hasPdf: Boolean(data.agreement.originalPdfUrl),
+    signerCount: Number(data.agreement.signerCount || 0),
+    status: data.agreement.status || 'Created'
+  });
   document.getElementById('agreementDetailSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -526,7 +592,7 @@ async function loadAgreements(search = '') {
       const signed = agreement.fullySignedUtc ? new Date(agreement.fullySignedUtc).toLocaleString() : 'Pendiente';
       const safeId = escapeHtml(agreement.agreementId);
       const safeTitle = escapeHtml(agreement.title || 'Sin título');
-      const safeStatus = escapeHtml(agreement.status || 'Created');
+      const safeStatus = escapeHtml(translateStatus(agreement.status || 'Created'));
       const safeAgreementId = JSON.stringify(agreement.agreementId || '');
 
       return `<tr class="hover:bg-primary/5 transition-colors group">
@@ -547,8 +613,8 @@ async function loadAgreements(search = '') {
     }).join('');
 
     countEl.textContent = `${data.count} acuerdos`;
-    const completed = data.agreements.filter((a) => (a.status || '') === 'FullySigned').length;
-    const pending = data.agreements.filter((a) => (a.status || '') !== 'FullySigned').length;
+    const completed = data.agreements.filter((a) => ['FullySigned', 'CounterSigned'].includes(a.status || '')).length;
+    const pending = data.agreements.filter((a) => !['FullySigned', 'CounterSigned'].includes(a.status || '')).length;
     document.getElementById('statDocuments').textContent = String(data.count);
     document.getElementById('statCompleted').textContent = String(completed);
     document.getElementById('statPending').textContent = String(pending);
@@ -567,6 +633,31 @@ function addSignerRow() {
     <input class="email flex-1 rounded-xl border border-slate-200 bg-background-light dark:bg-slate-800 px-4 py-2 text-sm" placeholder="Email" type="email" />
   `;
   container.appendChild(row);
+  updateWorkflowControls();
+}
+
+function collectSignerRows() {
+  return [...document.querySelectorAll('#signersList > div')]
+    .map((row) => ({
+      name: row.querySelector('.name').value.trim(),
+      email: row.querySelector('.email').value.trim()
+    }))
+    .filter((signer) => signer.email);
+}
+
+function validateSignerRows(rows) {
+  if (!rows.length) {
+    throw new Error('Agregá al menos un firmante con email');
+  }
+
+  const seen = new Set();
+  for (const signer of rows) {
+    const email = signer.email.toLowerCase();
+    if (seen.has(email)) {
+      throw new Error(`El correo ${signer.email} está repetido en la carga`);
+    }
+    seen.add(email);
+  }
 }
 
 document.getElementById('btnCreateNew').addEventListener('click', () => {
@@ -577,6 +668,7 @@ document.getElementById('btnCreateNew').addEventListener('click', () => {
 document.getElementById('addRow').onclick = () => addSignerRow();
 
 document.getElementById('btnCreate').onclick = async () => {
+  const button = document.getElementById('btnCreate');
   const file = document.getElementById('pdf').files[0];
   if (!file) {
     alert('Subí un PDF');
@@ -584,6 +676,7 @@ document.getElementById('btnCreate').onclick = async () => {
   }
 
   setCreateOutput('Creando acuerdo…');
+  setButtonBusy(button, true, 'Creando acuerdo...');
   try {
     const pdfBase64 = encodeBase64(await file.arrayBuffer());
     const title = document.getElementById('title').value.trim() || 'Contrato';
@@ -595,34 +688,41 @@ document.getElementById('btnCreate').onclick = async () => {
     });
 
     agreementId = res.agreementId;
+    setWorkflowState({
+      hasAgreement: true,
+      hasPdf: true,
+      signerCount: 0,
+      status: res.status || 'Created'
+    });
     setCreateOutput(`agreementId: ${agreementId}${res.notifyEmail ? ` · notificaciones: ${res.notifyEmail}` : ''}`);
-    setStatus(`Acuerdo ${agreementId} creado.`, false);
+    setStatus(`Acuerdo ${agreementId} creado. Ahora agregá al menos un firmante antes de aprobar.`, false);
     await loadAgreements(document.getElementById('searchInput').value);
   } catch (err) {
     setCreateOutput(`Error al crear el acuerdo: ${err.message || err}`, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 };
 
 document.getElementById('btnSigners').onclick = async () => {
+  const button = document.getElementById('btnSigners');
   if (!agreementId) {
     alert('Primero creá el acuerdo');
     return;
   }
 
-  const rows = [...document.querySelectorAll('#signersList > div')]
-    .map((row) => ({
-      name: row.querySelector('.name').value.trim(),
-      email: row.querySelector('.email').value.trim()
-    }))
-    .filter((signer) => signer.email);
-
-  if (!rows.length) {
-    alert('Agrega al menos un firmante con email');
+  let rows;
+  try {
+    rows = collectSignerRows();
+    validateSignerRows(rows);
+  } catch (err) {
+    alert(err.message || err);
     return;
   }
 
   const linksEl = document.getElementById('links');
   linksEl.textContent = 'Generando enlaces…';
+  setButtonBusy(button, true, 'Generando enlaces...');
   try {
     const res = await fetchJson(`${API}/addSigners`, {
       method: 'POST',
@@ -637,19 +737,24 @@ document.getElementById('btnSigners').onclick = async () => {
         <a class="text-primary font-semibold hover:underline break-all" target="_blank" rel="noopener noreferrer" href="${escapeHtml(link.url)}">Link de firma</a>
       </div>
     `).join('');
+    setWorkflowState({ signerCount: workflowState.signerCount + Number(res.count || rows.length) });
     setStatus(`Se generaron ${res.count} enlaces de firma.`, false);
   } catch (err) {
     linksEl.textContent = `Error al generar los enlaces: ${err.message || err}`;
+  } finally {
+    setButtonBusy(button, false);
   }
 };
 
 document.getElementById('btnApprove').onclick = async () => {
+  const button = document.getElementById('btnApprove');
   if (!agreementId) {
     alert('Falta agreementId');
     return;
   }
 
   setStatus('Aprobando…');
+  setButtonBusy(button, true, 'Aprobando...');
   try {
     const res = await fetchJson(`${API}/approve`, {
       method: 'POST',
@@ -657,10 +762,13 @@ document.getElementById('btnApprove').onclick = async () => {
       body: JSON.stringify({ agreementId, approvedBy: 'backoffice@travelcare' })
     });
 
+    setWorkflowState({ status: res.status || 'Approved' });
     setStatus(JSON.stringify(res, null, 2), false);
     await loadAgreements(document.getElementById('searchInput').value);
   } catch (err) {
     setStatus(`Error al aprobar el acuerdo: ${err.message || err}`, true);
+  } finally {
+    setButtonBusy(button, false);
   }
 };
 
@@ -702,6 +810,8 @@ document.getElementById('detailOpenFinal').addEventListener('click', () => {
 
 document.getElementById('detailCounterSign').addEventListener('click', async () => {
   if (!selectedAgreement) return;
+  const button = document.getElementById('detailCounterSign');
+  setButtonBusy(button, true, 'Contra-firmando...');
   try {
     await fetchJson(`${API}/counterSign`, {
       method: 'POST',
@@ -712,6 +822,8 @@ document.getElementById('detailCounterSign').addEventListener('click', async () 
     await loadAgreementDetail(selectedAgreement.agreementId);
   } catch (err) {
     alert(`No se pudo contra-firmar: ${err.message || err}`);
+  } finally {
+    setButtonBusy(button, false);
   }
 });
 
@@ -730,6 +842,7 @@ document.getElementById('btnExportAgreements').addEventListener('click', () => {
   URL.revokeObjectURL(anchor.href);
 });
 
+updateWorkflowControls();
 loadAgreements();
 
 document.querySelectorAll('a[href^="#"]').forEach((link) => {
