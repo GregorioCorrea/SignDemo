@@ -1,4 +1,5 @@
 const { table } = require('../shared/storage');
+const { logEvent } = require('../shared/events');
 
 module.exports = async function (context, req) {
   try {
@@ -23,6 +24,7 @@ module.exports = async function (context, req) {
       approvedBy,
       approvedUtc: new Date().toISOString()
     }, 'Merge');
+    await logEvent(agreementId, 'AgreementApproved', { approvedBy }).catch(() => {});
 
     context.res = {
       status: 200,

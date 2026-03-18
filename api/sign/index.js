@@ -2,6 +2,7 @@ const { table, containers } = require('../shared/storage');
 const { verifyToken } = require('../shared/tokens');
 const { PDFDocument } = require('pdf-lib');
 const crypto = require('crypto');
+const { logEvent } = require('../shared/events');
 
 module.exports = async function (context, req) {
   try {
@@ -67,11 +68,16 @@ module.exports = async function (context, req) {
     await containers.signatures().createIfNotExists();
     await containers.signed().createIfNotExists();
 
+    const signerName = String(body.signerName || signer.Name || '').trim();
     const signaturePng = Buffer.from(body.signaturePngBase64, 'base64');
-    await containers.signatures().getBlockBlobClient(`${agreementId}/${signerId}.png`).uploadData(signaturePng, {
+    const signatureBlob = `${agreementId}/${signerId}.png`;
+    const strokesBlob = `${agreementId}/${signerId}.json`;
+    const manifestBlob = `${agreementId}/${signerId}-manifest.json`;
+
+    await containers.signatures().getBlockBlobClient(signatureBlob).uploadData(signaturePng, {
       blobHTTPHeaders: { blobContentType: 'image/png' }
     });
-    await containers.signatures().getBlockBlobClient(`${agreementId}/${signerId}.json`).uploadData(
+    await containers.signatures().getBlockBlobClient(strokesBlob).uploadData(
       Buffer.from(JSON.stringify(body.signatureStrokes || [])),
       { blobHTTPHeaders: { blobContentType: 'application/json' } }
     );
@@ -80,7 +86,8 @@ module.exports = async function (context, req) {
       agreementId,
       signerId,
       signerEmail: signer.Email || '',
-      signerName: signer.Name || '',
+      signerName,
+      pdfSha256: agreement.pdfSha256 || '',
       consent: true,
       timestampUtc: now,
       ip: String(ip),
@@ -90,11 +97,12 @@ module.exports = async function (context, req) {
       .createHmac('sha256', process.env.HMAC_SECRET || 'dev-hmac-secret')
       .update(JSON.stringify(manifest))
       .digest('hex');
-    await containers.signatures().getBlockBlobClient(`${agreementId}/${signerId}-manifest.json`).uploadData(
+    await containers.signatures().getBlockBlobClient(manifestBlob).uploadData(
       Buffer.from(JSON.stringify({ ...manifest, hmac }, null, 2)),
       { blobHTTPHeaders: { blobContentType: 'application/json' } }
     );
 
+    let signedPdfBlob = '';
     if (agreement.pdfContainer && agreement.pdfBlob) {
       const sourceBlob = containers.agreements().getBlockBlobClient(agreement.pdfBlob);
       const download = await sourceBlob.download();
@@ -106,11 +114,13 @@ module.exports = async function (context, req) {
       const png = await pdfDoc.embedPng(signaturePng);
       const page = pdfDoc.getPage(pdfDoc.getPageCount() - 1);
       page.drawImage(png, { x: Math.max(page.getWidth() - 220, 40), y: 40, width: 180, height: 60 });
-      page.drawText(`Firmante: ${signer.Name || signer.Email || signerId}`, { x: 40, y: 110, size: 10 });
+      page.drawText(`Firmante: ${signerName || signer.Email || signerId}`, { x: 40, y: 110, size: 10 });
       page.drawText(`Fecha: ${now}`, { x: 40, y: 96, size: 9 });
+      page.drawText(`IP: ${String(ip || 'N/D')}`, { x: 40, y: 82, size: 9 });
 
       const signedPdf = await pdfDoc.save();
-      await containers.signed().getBlockBlobClient(`${agreementId}/${signerId}.pdf`).uploadData(Buffer.from(signedPdf), {
+      signedPdfBlob = `${agreementId}/${signerId}.pdf`;
+      await containers.signed().getBlockBlobClient(signedPdfBlob).uploadData(Buffer.from(signedPdf), {
         blobHTTPHeaders: { blobContentType: 'application/pdf' }
       });
     }
@@ -118,10 +128,15 @@ module.exports = async function (context, req) {
     await Signers.updateEntity({
       partitionKey: agreementId,
       rowKey: signerId,
+      Name: signerName || signer.Name || '',
       Status: 'SIGNED',
       SignedUtc: now,
       Ip: String(ip),
-      UserAgent: body.userAgent || ''
+      UserAgent: body.userAgent || '',
+      SignatureBlob: signatureBlob,
+      StrokesBlob: strokesBlob,
+      ManifestBlob: manifestBlob,
+      SignedPdfBlob: signedPdfBlob
     }, 'Merge');
 
     let pendingCount = 0;
@@ -140,6 +155,14 @@ module.exports = async function (context, req) {
     };
     if (nextStatus === 'FullySigned') agreementPatch.fullySignedUtc = now;
     await Agreements.updateEntity(agreementPatch, 'Merge');
+    await logEvent(agreementId, 'SignerCompleted', {
+      signerId,
+      signerName,
+      signerEmail: signer.Email || '',
+      signedUtc: now,
+      manifestBlob,
+      signedPdfBlob: signedPdfBlob || null
+    }).catch(() => {});
 
     context.res = {
       status: 200,

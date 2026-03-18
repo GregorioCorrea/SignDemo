@@ -1,6 +1,7 @@
 const { table } = require('../shared/storage');
 const { issueToken } = require('../shared/tokens');
 const { randomUUID } = require('crypto');
+const { logEvent } = require('../shared/events');
 
 module.exports = async function (context, req) {
   try {
@@ -51,6 +52,12 @@ module.exports = async function (context, req) {
         token,
         url: `${frontBaseUrl}/sign.html?token=${encodeURIComponent(token)}`
       });
+
+      await logEvent(agreementId, 'SignerAdded', {
+        signerId,
+        name: signerName,
+        email: signerEmail
+      }).catch(() => {});
     }
 
     context.res = {

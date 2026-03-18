@@ -1,6 +1,8 @@
 // api/createAgreement/index.js
 const { table, containers } = require('../shared/storage');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const { logEvent } = require('../shared/events');
 
 module.exports = async function (context, req) {
   try {
@@ -27,6 +29,7 @@ module.exports = async function (context, req) {
       pdfContainer = 'agreements';
       pdfBlob = `${agreementId}.pdf`;
       const pdfData = Buffer.from(pdfBase64, 'base64');
+      body.pdfSha256 = crypto.createHash('sha256').update(pdfData).digest('hex');
       const containerClient = containers.agreements();
       await containerClient.createIfNotExists({ access: 'container' });
       const blockClient = containerClient.getBlockBlobClient(pdfBlob);
@@ -47,11 +50,19 @@ module.exports = async function (context, req) {
       createdBy,
       pdfContainer,
       pdfBlob,
+      pdfSha256: body.pdfSha256 || '',
       status: 'Created',
       createdUtc: new Date().toISOString()
     };
 
     await agreementsTable.upsertEntity(entity, 'Merge');
+    await logEvent(agreementId, 'AgreementCreated', {
+      title,
+      createdBy,
+      pdfContainer,
+      pdfBlob,
+      pdfSha256: entity.pdfSha256
+    }).catch(() => {});
 
     context.res = {
       status: 201,
@@ -62,6 +73,7 @@ module.exports = async function (context, req) {
         title,
         pdfContainer,
         pdfBlob,
+        pdfSha256: entity.pdfSha256,
         status: entity.status,
         createdUtc: entity.createdUtc
       }

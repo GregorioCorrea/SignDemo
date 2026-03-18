@@ -38,7 +38,7 @@ jobs:
         run: |
           ZIP="$GITHUB_WORKSPACE/api.zip"
           rm -f "$ZIP"
-          zip -r "$ZIP" host.json package.json node_modules shared createAgreement addSigners approve getPdfSas sign finalize listAgreements
+          zip -r "$ZIP" host.json package.json node_modules shared createAgreement addSigners approve getPdfSas getAgreementDetail counterSign sign finalize listAgreements
           ls -lh "$ZIP"
 
       - name: Verify ZIP contents

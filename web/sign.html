@@ -116,6 +116,10 @@ Finalizar Firma
 <p class="text-slate-500 text-sm mt-1">Usa tu ratón o pantalla táctil para dibujar tu firma a continuación.</p>
 </div>
 <div class="p-6 space-y-6">
+<div>
+<label class="block text-sm font-bold text-slate-900 mb-2" for="signerName">Nombre completo</label>
+<input id="signerName" class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" placeholder="Nombre y apellido" type="text"/>
+</div>
 <!-- Draw Canvas -->
 <div class="relative w-full h-48 rounded-lg border-2 border-slate-200 signature-canvas flex items-center justify-center cursor-crosshair group" id="canvasWrapper">
 <canvas id="sig" class="w-full h-full"></canvas>
@@ -288,6 +292,7 @@ document.getElementById('btnSign').onclick = async () => {
 
   const body = {
     token,
+    signerName: document.getElementById('signerName').value.trim(),
     consent: true,
     signaturePngBase64: signaturePad.toDataURL('image/png').split(',')[1],
     signatureStrokes: signaturePad.toData(),
