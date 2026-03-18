@@ -1,11 +1,10 @@
-const {
-  BlobServiceClient,
-  generateBlobSASQueryParameters,
-  BlobSASPermissions,
-  SASProtocol,
-  StorageSharedKeyCredential
-} = require('@azure/storage-blob');
-const { TableClient } = require('@azure/data-tables');
+function getStorageBlobSdk() {
+  return require('@azure/storage-blob');
+}
+
+function getTablesSdk() {
+  return require('@azure/data-tables');
+}
 
 function getTablesConnection() {
   const conn = process.env.TABLES_CONNECTION;
@@ -34,14 +33,17 @@ function getStorageAccountKey() {
 }
 
 function getBlobService() {
+  const { BlobServiceClient } = getStorageBlobSdk();
   return BlobServiceClient.fromConnectionString(getStorageConnection());
 }
 
 function getSharedKey() {
+  const { StorageSharedKeyCredential } = getStorageBlobSdk();
   return new StorageSharedKeyCredential(getBlobAccount(), getStorageAccountKey());
 }
 
 function table(name) {
+  const { TableClient } = getTablesSdk();
   return TableClient.fromConnectionString(getTablesConnection(), name);
 }
 
@@ -53,6 +55,12 @@ const containers = {
 };
 
 function sasForBlob(container, blobName, minutes = 15) {
+  const {
+    generateBlobSASQueryParameters,
+    BlobSASPermissions,
+    SASProtocol
+  } = getStorageBlobSdk();
+
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
   const expiresOn = new Date(Date.now() + minutes * 60 * 1000);
   const sas = generateBlobSASQueryParameters({
