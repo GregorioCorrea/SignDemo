@@ -1,20 +1,55 @@
-const { BlobServiceClient, generateBlobSASQueryParameters, BlobSASPermissions, SASProtocol, StorageSharedKeyCredential } = require('@azure/storage-blob');
-const { TableClient, AzureSASCredential, AzureNamedKeyCredential } = require('@azure/data-tables');
+const {
+  BlobServiceClient,
+  generateBlobSASQueryParameters,
+  BlobSASPermissions,
+  SASProtocol,
+  StorageSharedKeyCredential
+} = require('@azure/storage-blob');
+const { TableClient } = require('@azure/data-tables');
 
-const conn = process.env.TABLES_CONNECTION;
-const account = process.env.BLOB_ACCOUNT;
-const accKey = /AccountKey=([^;]+)/.exec(process.env.AzureWebJobsStorage)[1];
+function getTablesConnection() {
+  const conn = process.env.TABLES_CONNECTION;
+  if (!conn) throw new Error('Missing TABLES_CONNECTION');
+  return conn;
+}
 
-const blobService = BlobServiceClient.fromConnectionString(process.env.AzureWebJobsStorage);
-const sharedKey = new StorageSharedKeyCredential(account, accKey);
+function getBlobAccount() {
+  const account = process.env.BLOB_ACCOUNT;
+  if (!account) throw new Error('Missing BLOB_ACCOUNT');
+  return account;
+}
 
-const table = (name) => TableClient.fromConnectionString(conn, name);
+function getStorageConnection() {
+  const conn = process.env.AzureWebJobsStorage;
+  if (!conn) throw new Error('Missing AzureWebJobsStorage');
+  return conn;
+}
+
+function getStorageAccountKey() {
+  const match = /AccountKey=([^;]+)/i.exec(getStorageConnection());
+  if (!match || !match[1]) {
+    throw new Error('AzureWebJobsStorage does not contain AccountKey');
+  }
+  return match[1];
+}
+
+function getBlobService() {
+  return BlobServiceClient.fromConnectionString(getStorageConnection());
+}
+
+function getSharedKey() {
+  return new StorageSharedKeyCredential(getBlobAccount(), getStorageAccountKey());
+}
+
+function table(name) {
+  return TableClient.fromConnectionString(getTablesConnection(), name);
+}
 
 const containers = {
-  agreements: () => blobService.getContainerClient('agreements'),
-  signed:     () => blobService.getContainerClient('signed'),
-  signatures: () => blobService.getContainerClient('signatures'),
-  assets:     () => blobService.getContainerClient('assets'),
+  agreements: () => getBlobService().getContainerClient('agreements'),
+  signed: () => getBlobService().getContainerClient('signed'),
+  signatures: () => getBlobService().getContainerClient('signatures'),
+  assets: () => getBlobService().getContainerClient('assets'),
 };
 
 function sasForBlob(container, blobName, minutes = 15) {
@@ -27,8 +62,9 @@ function sasForBlob(container, blobName, minutes = 15) {
     startsOn,
     expiresOn,
     protocol: SASProtocol.Https
-  }, sharedKey).toString();
-  return `https://${account}.blob.core.windows.net/${container}/${encodeURIComponent(blobName)}?${sas}`;
+  }, getSharedKey()).toString();
+
+  return `https://${getBlobAccount()}.blob.core.windows.net/${container}/${encodeURIComponent(blobName)}?${sas}`;
 }
 
 module.exports = { table, containers, sasForBlob };
