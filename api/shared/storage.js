@@ -1,8 +1,12 @@
+const { ensureWebCrypto } = require('./runtime');
+
 function getStorageBlobSdk() {
+  ensureWebCrypto();
   return require('@azure/storage-blob');
 }
 
 function getTablesSdk() {
+  ensureWebCrypto();
   return require('@azure/data-tables');
 }
 
