@@ -1,5 +1,14 @@
-const { table, sasForBlob } = require('../shared/storage');
+const { table, sasForBlob, containers } = require('../shared/storage');
 const { verifyToken } = require('../shared/tokens');
+
+async function blobExists(containerClient, blobName) {
+  if (!blobName) return false;
+  try {
+    return await containerClient.getBlockBlobClient(blobName).exists();
+  } catch (err) {
+    return false;
+  }
+}
 
 module.exports = async function (context, req) {
   try {
@@ -42,8 +51,20 @@ module.exports = async function (context, req) {
         return;
       }
 
-      container = agreement.pdfContainer || '';
-      blob = agreement.pdfBlob || '';
+      const agreementsContainer = containers.agreements();
+      const candidates = [
+        agreement.pdfBlob,
+        `${agreementId}/original.pdf`,
+        `${agreementId}.pdf`
+      ].filter(Boolean);
+
+      for (const candidate of candidates) {
+        if (await blobExists(agreementsContainer, candidate)) {
+          container = 'agreements';
+          blob = candidate;
+          break;
+        }
+      }
       title = agreement.title || null;
     }
 
