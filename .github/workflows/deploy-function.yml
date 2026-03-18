@@ -10,6 +10,9 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      RG: eSignDemo
+      APP: func-signdemo
     defaults:
       run:
         working-directory: api
@@ -35,8 +38,13 @@ jobs:
         run: |
           ZIP="$GITHUB_WORKSPACE/api.zip"
           rm -f "$ZIP"
-          zip -r "$ZIP" host.json package.json shared createAgreement addSigners approve getPdfSas sign finalize listAgreements
+          zip -r "$ZIP" host.json package.json node_modules shared createAgreement addSigners approve getPdfSas sign finalize listAgreements
           ls -lh "$ZIP"
+
+      - name: Verify ZIP contents
+        run: |
+          unzip -l "$GITHUB_WORKSPACE/api.zip" | grep "node_modules/" >/dev/null || (echo "Falta node_modules en api.zip" && exit 1)
+          unzip -l "$GITHUB_WORKSPACE/api.zip" | grep "listAgreements/index.js" >/dev/null || (echo "Falta listAgreements/index.js en api.zip" && exit 1)
 
       # Login a Azure con Service Principal
       - name: Azure Login
@@ -45,9 +53,6 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy via Run-From-Package (Blob SAS)
-        env:
-          RG: eSignDemo
-          APP: func-signdemo
         run: |
           set -e
 
@@ -109,6 +114,7 @@ jobs:
           az functionapp function list -g "$RG" -n "$APP" -o table || true
 
       - name: Deploy static web files to Storage $web
+        working-directory: ${{ github.workspace }}
         run: |
           STG=$(az storage account list -g "$RG" --query "[0].name" -o tsv)
           az storage blob service-properties update --account-name "$STG" --static-website true --index-document index.html
