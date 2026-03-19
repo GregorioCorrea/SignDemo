@@ -384,6 +384,18 @@ function escapeHtml(value) {
 }
 
 function translateStatus(status) {
+  const raw = String(status || '').trim();
+  const normalized = (() => {
+    if (!raw) return '';
+    if (/counter/i.test(raw)) return 'CounterSigned';
+    if (/fully/i.test(raw)) return 'FullySigned';
+    if (/partial/i.test(raw)) return 'PartiallySigned';
+    if (/approved/i.test(raw)) return 'Approved';
+    if (/created/i.test(raw)) return 'Created';
+    if (/^signed$/i.test(raw)) return 'SIGNED';
+    if (/pending/i.test(raw)) return 'PENDING';
+    return raw;
+  })();
   const map = {
     Created: 'Creado',
     Approved: 'Aprobado',
@@ -393,7 +405,7 @@ function translateStatus(status) {
     PENDING: 'Pendiente',
     SIGNED: 'Firmado'
   };
-  return map[status] || status || 'Sin estado';
+  return map[normalized] || normalized || 'Sin estado';
 }
 
 function setButtonBusy(button, busy, busyText) {
@@ -436,9 +448,17 @@ function updateWorkflowControls() {
 }
 
 function badgeClass(status) {
-  if (status === 'CounterSigned') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
-  if (status === 'FullySigned') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-  if (status === 'Approved' || status === 'PartiallySigned') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+  const normalized = (() => {
+    const raw = String(status || '').trim();
+    if (/counter/i.test(raw)) return 'CounterSigned';
+    if (/fully/i.test(raw)) return 'FullySigned';
+    if (/partial/i.test(raw)) return 'PartiallySigned';
+    if (/approved/i.test(raw)) return 'Approved';
+    return raw;
+  })();
+  if (normalized === 'CounterSigned') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+  if (normalized === 'FullySigned') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  if (normalized === 'Approved' || normalized === 'PartiallySigned') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
   return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
 }
 
